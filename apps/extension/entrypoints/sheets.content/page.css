@@ -1,0 +1,59 @@
+[data-spe-popup] {
+  box-sizing: border-box !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  overflow: auto !important;
+  overscroll-behavior: contain;
+}
+/* Opacity also hides descendants that explicitly override inherited visibility. */
+[data-spe-popup][data-spe-sheet-scrolling] {
+  visibility: hidden !important;
+  opacity: 0 !important;
+}
+[data-spe-popup='history'] .docs-blameview,
+[data-spe-popup='history'] .docs-blameview-valuecontainer,
+[data-spe-popup='history'] .docs-blameview-value-content,
+[data-spe-popup='comment'] .docos-anchoreddocoview-internal,
+[data-spe-popup='comment'] .docos-anchoreddocoview-content,
+[data-spe-popup='comment'] .docos-docoview-replycontainer,
+[data-spe-popup='comment'] .docos-docoview-input-pane,
+[data-spe-popup='comment'] .docos-input-textarea {
+  width: 100% !important;
+  max-width: none !important;
+  box-sizing: border-box !important;
+}
+/* Zoom just the native text containers so their existing font sizes scale proportionally. */
+[data-spe-popup='comment'] .docos-replyview-body,
+[data-spe-popup='comment'] .docos-input-textarea,
+[data-spe-popup='history'] .docs-blameview-value-content {
+  zoom: var(--spe-font-scale, 1);
+}
+[data-spe-popup='comment'] .docos-replyview-body {
+  overflow-wrap: anywhere !important;
+  white-space: pre-wrap !important;
+}
+[data-spe-popup='history'] .docs-blameview {
+  overflow: visible !important;
+}
+[data-spe-popup='history'] .docs-blameview-valuecontainer {
+  max-height: none !important;
+  overflow: visible !important;
+}
+[data-spe-popup='history'] .docs-blameview,
+[data-spe-popup='comment'] .docos-anchoreddocoview-internal {
+  padding-bottom: 24px !important;
+}
+spe-history-diff {
+  display: block !important;
+  width: 100% !important;
+}
+/* Default to hidden while diff is enabled; unsupported values opt back in. */
+html[data-spe-diff-enabled]
+  .waffle-blameview
+  .docs-blameview-value-content:not([data-spe-native-visible]) {
+  visibility: hidden !important;
+}
+/* Hide only the native value while a previously enhanced history is changing. */
+[data-spe-history-loading] .docs-blameview-value-content {
+  visibility: hidden !important;
+}

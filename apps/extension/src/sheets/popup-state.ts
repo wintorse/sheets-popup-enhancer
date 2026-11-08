@@ -1,0 +1,32 @@
+export type Ui = { mount: () => void; remove: () => void; shadowHost: HTMLElement };
+export type ValueState = {
+  signature: string;
+  display: string;
+  priority: string;
+  ui?: Ui;
+  pending: boolean;
+  disposed: boolean;
+};
+export type PopupState = {
+  width: string;
+  priority: string;
+  left: string;
+  leftPriority: string;
+  top: string;
+  topPriority: string;
+  maxHeight: string;
+  maxHeightPriority: string;
+  minHeight: string;
+  minHeightPriority: string;
+  desiredWidth: number;
+  grip?: Ui;
+  pending: boolean;
+  visible: boolean;
+  disposed: boolean;
+  values: Map<HTMLElement, ValueState>;
+  onNavigation: (event: Event) => void;
+  pendingNavigation?: string;
+  contentWasHidden: boolean;
+  navigationTimer?: ReturnType<typeof setTimeout>;
+  navigationSequence: number;
+};

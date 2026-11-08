@@ -1,0 +1,17 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "rules": {
+    "complexity": [
+      "error",
+      {
+        "max": 12
+      }
+    ],
+    "no-nested-ternary": "error",
+    "typescript/no-floating-promises": "error"
+  },
+  "ignorePatterns": ["**/.output/**", "**/.wxt/**", "**/dist/**", "test-results/**"],
+  "options": {
+    "typeAware": true
+  }
+}

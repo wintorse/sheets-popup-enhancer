@@ -1,0 +1,40 @@
+{
+  "name": "sheets-popup-enhancer",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm --filter @spe/extension dev",
+    "dev:firefox": "pnpm --filter @spe/extension dev:firefox",
+    "build": "pnpm --filter @spe/extension build",
+    "build:firefox": "pnpm --filter @spe/extension build:firefox",
+    "check": "pnpm lint && pnpm format:check && pnpm --filter @spe/extension prepare && pnpm -r --if-present check",
+    "test": "vitest run",
+    "test:e2e": "pnpm build && playwright test --project=chrome",
+    "test:e2e:firefox": "pnpm build:firefox && playwright test --project=firefox",
+    "zip": "pnpm --filter @spe/extension zip",
+    "zip:firefox": "pnpm --filter @spe/extension zip:firefox",
+    "lint": "oxlint --deny-warnings --format=agent",
+    "lint:fix": "oxlint --fix",
+    "format": "oxfmt --write .",
+    "format:check": "oxfmt --check ."
+  },
+  "devDependencies": {
+    "@playwright/test": "catalog:",
+    "@sveltejs/vite-plugin-svelte": "catalog:",
+    "@types/node": "catalog:",
+    "jsdom": "catalog:",
+    "oxfmt": "catalog:",
+    "oxlint": "catalog:",
+    "oxlint-tsgolint": "catalog:",
+    "svelte": "catalog:",
+    "svelte-check": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vitest": "catalog:"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "packageManager": "pnpm@12.15.0"
+}

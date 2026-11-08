@@ -1,0 +1,67 @@
+/* Shared light palette for the Sheets content UI and settings. */
+:root,
+:host {
+  color-scheme: light;
+  --spe-surface: #ffffff;
+  --spe-background: #f8fafd;
+  --spe-sidebar: #f0f4f9;
+  --spe-surface-subtle: #f8f9fa;
+  --spe-surface-muted: #f1f3f4;
+  --spe-outline: #dadce0;
+  --spe-outline-subtle: #e8eaed;
+  --spe-control-outline: #80868b;
+  --spe-text: #202124;
+  --spe-text-secondary: #5f6368;
+  --spe-primary: #1a73e8;
+  --spe-on-primary: #ffffff;
+  --spe-selected: #e8f0fe;
+  --spe-selected-text: #1967d2;
+  --spe-green: #188038;
+  --spe-green-surface: #e6f4ea;
+  --spe-green-text: #137333;
+  --spe-deleted-surface: #fce8e6;
+  --spe-deleted-highlight: #fad2cf;
+  --spe-deleted-text: #a50e0e;
+  --spe-added-surface: #e6f4ea;
+  --spe-added-highlight: #ceead6;
+  --spe-added-text: #137333;
+  --spe-error: #c5221f;
+  --spe-grid-line: rgb(218 220 224 / 65%);
+  --spe-cell-selection: rgb(26 115 232 / 8%);
+  --spe-shadow-soft: rgb(60 64 67 / 12%);
+  --spe-shadow-light: rgb(60 64 67 / 8%);
+}
+
+@media (forced-colors: active) {
+  :root,
+  :host {
+    --spe-surface: Canvas;
+    --spe-background: Canvas;
+    --spe-sidebar: Canvas;
+    --spe-surface-subtle: Canvas;
+    --spe-surface-muted: Canvas;
+    --spe-outline: CanvasText;
+    --spe-outline-subtle: CanvasText;
+    --spe-control-outline: ButtonText;
+    --spe-text: CanvasText;
+    --spe-text-secondary: CanvasText;
+    --spe-primary: Highlight;
+    --spe-on-primary: HighlightText;
+    --spe-selected: Highlight;
+    --spe-selected-text: HighlightText;
+    --spe-green: LinkText;
+    --spe-green-surface: Canvas;
+    --spe-green-text: CanvasText;
+    --spe-deleted-surface: Canvas;
+    --spe-deleted-highlight: Highlight;
+    --spe-deleted-text: CanvasText;
+    --spe-added-surface: Canvas;
+    --spe-added-highlight: Highlight;
+    --spe-added-text: CanvasText;
+    --spe-error: CanvasText;
+    --spe-grid-line: CanvasText;
+    --spe-cell-selection: Canvas;
+    --spe-shadow-soft: transparent;
+    --spe-shadow-light: transparent;
+  }
+}

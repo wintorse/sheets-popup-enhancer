@@ -1,0 +1,112 @@
+name: CI and release
+
+on:
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.package.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/setup@fa36a5ef7dcdefc3a7cb25655c122e00cf6e636e # v3.1.2
+        with:
+          runtime: node@26
+          cache: true
+          install: false
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - run: pnpm test
+      - run: pnpm test:e2e
+      - name: Package extensions
+        id: package
+        if: github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          pnpm zip
+          pnpm zip:firefox
+
+          shopt -s nullglob
+          chrome=(apps/extension/.output/*-chrome.zip)
+          firefox=(apps/extension/.output/*-firefox.zip)
+          if (( ${#chrome[@]} != 1 || ${#firefox[@]} != 1 )); then
+            echo 'Expected one ZIP per browser' >&2
+            exit 1
+          fi
+          chrome_version=$(unzip -p "${chrome[0]}" manifest.json | node -p 'JSON.parse(require("fs").readFileSync(0, "utf8")).version')
+          firefox_version=$(unzip -p "${firefox[0]}" manifest.json | node -p 'JSON.parse(require("fs").readFileSync(0, "utf8")).version')
+          if [[ ! $chrome_version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ || $chrome_version != "$firefox_version" ]]; then
+            echo "Invalid or mismatched extension versions: $chrome_version and $firefox_version" >&2
+            exit 1
+          fi
+
+          tag="v$chrome_version"
+          mkdir -p release
+          cp "${chrome[0]}" "release/sheets-popup-enhancer_${tag}_chrome.zip"
+          cp "${firefox[0]}" "release/sheets-popup-enhancer_${tag}_firefox.zip"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: github.ref == 'refs/heads/main'
+        with:
+          name: release-assets
+          path: release/*.zip
+          if-no-files-found: error
+          retention-days: 1
+
+  release:
+    if: github.ref == 'refs/heads/main'
+    needs: check
+    runs-on: ubuntu-latest
+    concurrency:
+      group: release-main
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-assets
+          path: release
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.check.outputs.tag }}
+        shell: bash
+        run: |
+          set +e
+          git ls-remote --exit-code origin "refs/tags/$TAG" "refs/tags/$TAG^{}" > "$RUNNER_TEMP/tag-ref"
+          status=$?
+          set -e
+          if (( status != 0 && status != 2 )); then
+            exit "$status"
+          fi
+          if (( status == 0 )); then
+            tag_sha=$(awk -v ref="refs/tags/$TAG^{}" '$2 == ref { print $1 }' "$RUNNER_TEMP/tag-ref")
+            if [[ -z $tag_sha ]]; then
+              tag_sha=$(awk 'NR == 1 { print $1 }' "$RUNNER_TEMP/tag-ref")
+            fi
+            if [[ $tag_sha != "$GITHUB_SHA" ]]; then
+              echo "$TAG already points to another commit; skipping release."
+              exit 0
+            fi
+          fi
+          if release=$(gh release view "$TAG" --json isDraft,targetCommitish --jq '[.isDraft, .targetCommitish] | @tsv' 2>/dev/null); then
+            IFS=$'\t' read -r draft target <<< "$release"
+            if [[ $draft == true ]]; then
+              if (( status == 2 )) && [[ $target != "$GITHUB_SHA" ]]; then
+                echo "Draft release $TAG targets another commit; skipping release."
+                exit 0
+              fi
+              gh release upload "$TAG" release/*.zip --clobber
+              gh release edit "$TAG" --draft=false
+            else
+              echo "Release $TAG already exists; skipping release."
+            fi
+            exit 0
+          fi
+          gh release create "$TAG" release/*.zip --target "$GITHUB_SHA" --title "$TAG" --generate-notes
