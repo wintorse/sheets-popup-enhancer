@@ -134,4 +134,6 @@ GitHub Actionsでは、pushごとに `pnpm check`、`pnpm test`、`pnpm test:e2e
 
 [MITライセンス](LICENSE)です。依存ライブラリなどのライセンスは [THIRD_PARTY_LICENSES.txt](apps/extension/public/THIRD_PARTY_LICENSES.txt) にまとめており、拡張機能にも同梱しています。
 
-SheetsのDOMセレクターと履歴の構造は [better-gsheets-popups-extension](https://github.com/wintorse/better-gsheets-popups-extension) を参考にしました。
+この拡張機能は [better-gsheets-popups-extension](https://github.com/wintorse/better-gsheets-popups-extension) をより高機能にするために作成されました。
+
+拡張機能の名前と設定パネルのUIは、[Sheets Row Highlighter](https://github.com/matsu7089/sheets-row-highlighter) を参考にさせていただきました。

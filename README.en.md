@@ -134,4 +134,6 @@ The production extension loads its bundled CSS from its own extension URL. It do
 
 This project is released under the [MIT License](LICENSE). Licenses for dependencies and other third parties are collected in [THIRD_PARTY_LICENSES.txt](apps/extension/public/THIRD_PARTY_LICENSES.txt), which is also included in the extension.
 
-Sheets DOM selectors and history structures were informed by [better-gsheets-popups-extension](https://github.com/wintorse/better-gsheets-popups-extension).
+This extension was created to make [better-gsheets-popups-extension](https://github.com/wintorse/better-gsheets-popups-extension) even more functional.
+
+The extension's name and settings popup UI were inspired by [Sheets Row Highlighter](https://github.com/matsu7089/sheets-row-highlighter).
