@@ -3,9 +3,7 @@ export type ValueState = {
   signature: string;
   display: string;
   priority: string;
-  ui?: Ui;
-  pending: boolean;
-  disposed: boolean;
+  ui: Ui;
 };
 export type PopupState = {
   width: string;
@@ -24,9 +22,10 @@ export type PopupState = {
   visible: boolean;
   disposed: boolean;
   values: Map<HTMLElement, ValueState>;
+  renders: Map<HTMLElement, { signature: string }>;
   onNavigation: (event: Event) => void;
+  outgoingValue?: HTMLElement;
   pendingNavigation?: string;
   contentWasHidden: boolean;
   navigationTimer?: ReturnType<typeof setTimeout>;
-  navigationSequence: number;
 };

@@ -1078,7 +1078,8 @@ test('content script: partial history follows latest state and formula bar chang
   });
   await expect(diff).toHaveCount(1);
   await page.locator('.docs-blameview-previous-edit-button').dispatchEvent('click');
-  await expect(diff).toHaveCount(0);
+  await expect(diff.locator('.after .value')).toHaveText('apple orange citrus');
+  await expect(diff.locator('.after .value')).toBeVisible();
   await expect(native).toBeHidden();
   await native.evaluate((node) => {
     node.innerHTML = '<span class="docs-blame-bold-text">Added:</span> "old"';
@@ -1697,7 +1698,7 @@ test('content script: Korean postfix history handles empty labels and verifies t
   expect(errors).toEqual([]);
 });
 
-test('content script: navigation hides native history until the new value is ready or unsupported', async ({
+test('content script: navigation keeps the old diff until the next history is ready', async ({
   page,
 }) => {
   // Synthetic fixture: Sheets can update a reused value node after the navigation click.
@@ -1726,7 +1727,7 @@ test('content script: navigation hides native history until the new value is rea
 
   await previous.dispatchEvent('click');
   await expect(native).toBeHidden();
-  await expect(diff).toHaveCount(0);
+  await expect(diff.locator('.after .value')).toBeVisible();
   // Allow multiple paints before Sheets replaces the native value.
   await page.evaluate(
     () =>
@@ -1746,12 +1747,15 @@ test('content script: navigation hides native history until the new value is rea
       ),
   );
   await expect(popup).toHaveAttribute('data-spe-history-loading');
+  await expect(diff.locator('.after .value')).toBeVisible();
+  await expect(diff.locator('.after .value')).toHaveText('two');
   await native.evaluate((node) => {
     node.innerHTML =
       '<span class="docs-blame-bold-text">Replaced:</span> "two" <span class="docs-blame-bold-text">with</span> "three"';
     (node.parentElement as HTMLElement).style.display = 'block';
   });
   await expect(diff.locator('.after .value')).toHaveText('three');
+  await expect(diff).toHaveCount(1);
   await expect(native).toBeHidden();
   await expect(popup).not.toHaveAttribute('data-spe-history-loading');
 
@@ -1774,6 +1778,39 @@ test('content script: navigation hides native history until the new value is rea
   await expect(native).toBeHidden();
   await expect(popup).not.toHaveAttribute('data-spe-history-loading', { timeout: 1000 });
   await expect(diff.locator('.after .value')).toHaveText('again', { timeout: 1000 });
+
+  // Hold the next diff's stylesheet request while Sheets replaces the entire value container.
+  const cssPath = '**/__extension__/content-scripts/sheets.css';
+  let releaseCss = () => {};
+  const cssReady = new Promise<void>((resolve) => {
+    releaseCss = resolve;
+  });
+  await page.route(cssPath, async (route) => {
+    await cssReady;
+    await route.fallback();
+  });
+  const cssRequested = page.waitForRequest(cssPath);
+  try {
+    await popup
+      .locator('.docs-blameview-next-edit-button')
+      .evaluate((node) => node.setAttribute('aria-disabled', 'false'));
+    await popup.dispatchEvent('keydown', { key: 'ArrowRight' });
+    await content.evaluate((node) => {
+      const replacement = node.cloneNode(false) as HTMLElement;
+      replacement.innerHTML =
+        '<div class="docs-blameview-value-content"><span class="docs-blame-bold-text">Added:</span> "newer"</div>';
+      node.replaceWith(replacement);
+    });
+    await cssRequested;
+    await expect(diff.locator('.after .value')).toBeVisible();
+    await expect(diff.locator('.after .value')).toHaveText('again');
+    await expect(native).toBeHidden();
+  } finally {
+    releaseCss();
+  }
+  await expect(diff.locator('.after .value')).toHaveText('newer');
+  await expect(diff).toHaveCount(1);
+  await expect(native).toBeHidden();
 });
 
 test('content script: native values start hidden and unsupported content is restored', async ({

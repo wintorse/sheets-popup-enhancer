@@ -1,6 +1,6 @@
 # Chrome Web Store Listing — Sheets Popup Enhancer
 
-- Last Updated: 2026-11-08
+- Last Updated: 2026-11-09
 
 ## Store Listing
 
@@ -33,7 +33,7 @@
 
 ## Version History
 
-- 1.0.0（開発中）: 差分本文は等幅フォントで表示し、メニュー・エラー表示のフォント指定は Sheets のコメントと揃えました。
+- 1.0.0（開発中）: 差分本文は等幅フォントで表示し、メニュー・エラー表示のフォント指定は Sheets のコメントと揃えました。履歴を前後に移動するときは、次の差分が表示されるまで直前の差分を表示します。
 
 ## Screenshot Updates
 
