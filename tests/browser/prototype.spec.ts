@@ -1090,6 +1090,7 @@ test('content script: partial history follows latest state and formula bar chang
 test('content script: returning from the end of history restores a reused value', async ({
   page,
 }) => {
+  // Synthetic fixture for the native end-of-history message and navigation controls.
   await mockExtension(page);
   await page.route('**/fixtures/history-end', (route) =>
     route.fulfill({
@@ -1109,6 +1110,7 @@ test('content script: returning from the end of history restores a reused value'
   });
   const diff = page.locator('spe-history-diff');
   const content = page.locator('.docs-blameview-content');
+  const message = page.locator('.docs-blameview-message');
   const previous = page.locator('.docs-blameview-previous-edit-button');
   const next = page.locator('.docs-blameview-next-edit-button');
   await expect(diff.locator('.after .value')).toHaveText('abc');
@@ -1118,11 +1120,18 @@ test('content script: returning from the end of history restores a reused value'
   });
   await previous.evaluate((node) => node.setAttribute('aria-disabled', 'true'));
   await next.evaluate((node) => node.setAttribute('aria-disabled', 'false'));
+  await message.evaluate((node) => {
+    (node as HTMLElement).style.display = 'block';
+  });
   await expect(diff).toHaveCount(0);
+  await expect(message).toBeVisible();
   // Sheets reuses the previous value node without changing its innerHTML.
   // Sheets may reveal the same value before the navigation click reaches the extension.
   await content.evaluate((node) => {
     (node as HTMLElement).style.display = 'block';
+  });
+  await message.evaluate((node) => {
+    (node as HTMLElement).style.display = 'none';
   });
   await next.dispatchEvent('click');
   await previous.evaluate((node) => node.setAttribute('aria-disabled', 'false'));
@@ -1724,6 +1733,7 @@ test('content script: navigation keeps the old diff until the next history is re
   const diff = page.locator('spe-history-diff');
   const previous = page.locator('.docs-blameview-previous-edit-button');
   await expect(diff.locator('.after .value')).toHaveText('two');
+  await page.clock.install();
 
   await previous.dispatchEvent('click');
   await expect(native).toBeHidden();
@@ -1740,12 +1750,7 @@ test('content script: navigation keeps the old diff until the next history is re
   await content.evaluate((node) => {
     (node as HTMLElement).style.display = 'none';
   });
-  await page.evaluate(
-    () =>
-      new Promise<void>((resolve) =>
-        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
-      ),
-  );
+  await page.clock.runFor(350);
   await expect(popup).toHaveAttribute('data-spe-history-loading');
   await expect(diff.locator('.after .value')).toBeVisible();
   await expect(diff.locator('.after .value')).toHaveText('two');
@@ -1789,17 +1794,23 @@ test('content script: navigation keeps the old diff until the next history is re
     await cssReady;
     await route.fallback();
   });
-  const cssRequested = page.waitForRequest(cssPath);
   try {
     await popup
       .locator('.docs-blameview-next-edit-button')
       .evaluate((node) => node.setAttribute('aria-disabled', 'false'));
     await popup.dispatchEvent('keydown', { key: 'ArrowRight' });
-    await content.evaluate((node) => {
-      const replacement = node.cloneNode(false) as HTMLElement;
+    await content.evaluate((node) => node.remove());
+    await page.clock.runFor(350);
+    await expect(diff.locator('.after .value')).toBeVisible();
+    await expect(diff.locator('.after .value')).toHaveText('again');
+
+    const cssRequested = page.waitForRequest(cssPath);
+    await popup.locator('.docs-blameview').evaluate((node) => {
+      const replacement = document.createElement('div');
+      replacement.className = 'docs-blameview-content';
       replacement.innerHTML =
         '<div class="docs-blameview-value-content"><span class="docs-blame-bold-text">Added:</span> "newer"</div>';
-      node.replaceWith(replacement);
+      node.append(replacement);
     });
     await cssRequested;
     await expect(diff.locator('.after .value')).toBeVisible();
@@ -1903,6 +1914,53 @@ test('content script: a stalled diff render restores native history', async ({ p
   await expect(page.locator('spe-history-diff .after .value')).toHaveText('value', {
     timeout: 5000,
   });
+  await expect(native).toBeHidden();
+});
+
+test('content script: navigation keeps the native fallback until the stalled render resolves', async ({
+  page,
+}) => {
+  await openDiffFixture(page);
+  await page.clock.install();
+  const cssPath = '**/__extension__/content-scripts/sheets.css';
+  const cssReady = Promise.withResolvers<void>();
+  let requests = 0;
+  await page.route(cssPath, async (route) => {
+    requests++;
+    await cssReady.promise;
+    await route.fallback();
+  });
+
+  const native = page.locator('.docs-blameview-value-content');
+  const diff = page.locator('spe-history-diff');
+  try {
+    await page.locator('.docs-blameview').evaluate((node) => {
+      const previous = document.createElement('button');
+      previous.className = 'docs-blameview-previous-edit-button';
+      previous.setAttribute('aria-disabled', 'false');
+      node.prepend(previous);
+      previous.click();
+    });
+    const cssRequested = page.waitForRequest(cssPath);
+    await setHistoryValues(page, 'new', 'later');
+    await cssRequested;
+    await expect(diff.locator('.after .value')).toHaveText('new');
+    await page.clock.runFor(1600);
+    await expect(native).toBeVisible();
+    await expect(native).toContainText('later');
+
+    // Sheets can replace the children with equivalent markup during the fallback.
+    await native.evaluate((node) => {
+      node.replaceChildren(...Array.from(node.childNodes, (child) => child.cloneNode(true)));
+    });
+    await page.clock.runFor(100);
+    await expect(native).toBeVisible();
+    await expect(diff).toHaveCount(0);
+    expect(requests).toBe(1);
+  } finally {
+    cssReady.resolve();
+  }
+  await expect(diff.locator('.after .value')).toHaveText('later');
   await expect(native).toBeHidden();
 });
 

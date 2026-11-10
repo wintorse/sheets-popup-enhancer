@@ -22,7 +22,7 @@ export type PopupState = {
   visible: boolean;
   disposed: boolean;
   values: Map<HTMLElement, ValueState>;
-  renders: Map<HTMLElement, { signature: string }>;
+  renders: Map<HTMLElement, { signature: string; timedOut: boolean }>;
   onNavigation: (event: Event) => void;
   outgoingValue?: HTMLElement;
   pendingNavigation?: string;
