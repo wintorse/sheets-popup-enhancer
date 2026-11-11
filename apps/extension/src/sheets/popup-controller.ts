@@ -2,7 +2,7 @@ import { mount, unmount } from 'svelte';
 import { get } from 'svelte/store';
 import { createShadowRootUi } from 'wxt/utils/content-script-ui/shadow-root';
 import { settings, watchSettings } from '../settings';
-import { isPartialHistory, parseHistory, readFormulaBar } from '../sheets/history';
+import { isPartialHistory, parseHistory, readFormulaBar, type CellChange } from '../sheets/history';
 import HistoryDiff from '../ui/HistoryDiff.svelte';
 import ResizeGrip from '../ui/ResizeGrip.svelte';
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
@@ -13,7 +13,7 @@ const RENDER_TIMEOUT = 1500;
 const SHEET_SCROLL_SETTLE = 200;
 
 import { clampPopup, setStyle, restoreProperty, syncGripPosition } from './popup-layout';
-import type { Ui, ValueState, PopupState } from './popup-state';
+import type { Ui, PopupState } from './popup-state';
 import {
   mutationElement,
   popupReopened,
@@ -84,14 +84,23 @@ export class PopupController {
     if (target instanceof HTMLElement && popupReopened(mutation, target))
       this.resetScrollWithin(target);
     if (mutation.type === 'childList' || mutation.type === 'characterData') {
-      const value = target?.closest<HTMLElement>(VALUE);
-      if (value) delete value.dataset.speNativeVisible;
+      this.hideChangedNativeValue(target);
     }
     this.handleReopenedHistory(mutation, target);
     if (formulaBarChanged(mutation, target)) {
       for (const popup of this.popups.keys()) if (this.isHistory(popup)) this.schedule(popup);
     }
     this.collectMutationNodes(mutation, target);
+  }
+
+  private hideChangedNativeValue(target: Element | null) {
+    const value = target?.closest<HTMLElement>(VALUE);
+    if (!value?.hasAttribute('data-spe-native-visible')) return;
+    const popup = value.closest<HTMLElement>('.waffle-blameview');
+    const job = popup && this.popups.get(popup)?.renders.get(value);
+    if (popup && job?.timedOut && job.signature === this.historyContext(value, popup).signature)
+      return;
+    delete value.dataset.speNativeVisible;
   }
 
   constructor(
@@ -187,14 +196,13 @@ export class PopupController {
     const target = event.target instanceof Element ? event.target : null;
     if (target?.matches('#waffle-grid-container .native-scrollbar')) this.sheetScrolling();
   };
-  private finishNavigation(
-    popup: HTMLElement,
-    state: PopupState,
-    sequence = state.navigationSequence,
-  ) {
-    if (sequence !== state.navigationSequence) return;
+  private finishNavigation(popup: HTMLElement, state: PopupState, shownValue?: HTMLElement) {
     if (state.navigationTimer !== undefined) clearTimeout(state.navigationTimer);
     state.navigationTimer = undefined;
+    state.pendingNavigation = undefined;
+    const outgoing = state.outgoingValue;
+    state.outgoingValue = undefined;
+    if (outgoing && outgoing !== shownValue) this.deleteValue(outgoing, state);
     delete popup.dataset.speHistoryLoading;
   }
   private resetHistoryScroll(element: HTMLElement) {
@@ -203,15 +211,29 @@ export class PopupController {
     element.scrollLeft = 0;
     syncGripPosition(element, this.popups.get(element));
   }
-  private disposeValue(element: HTMLElement, state: ValueState) {
-    state.disposed = true;
-    state.ui?.remove();
-    restoreProperty(element, 'display', state.display, state.priority);
+  private deleteValue(element: HTMLElement, state: PopupState) {
+    const value = state.values.get(element);
+    if (!value) return;
+    value.ui.remove();
+    restoreProperty(element, 'display', value.display, value.priority);
+    state.values.delete(element);
   }
   private historyContentVisible(element: HTMLElement) {
     const content = element.closest<HTMLElement>('.docs-blameview-content');
     return !content || (!content.hidden && getComputedStyle(content).display !== 'none');
   }
+
+  private historyEndShown(popup: HTMLElement) {
+    const message = popup.querySelector<HTMLElement>('.docs-blameview-message');
+    return (
+      !!message?.textContent?.trim() &&
+      message.getClientRects().length > 0 &&
+      getComputedStyle(message).visibility === 'visible' &&
+      !!popup.querySelector('.docs-blameview-previous-edit-button[aria-disabled="true"]') &&
+      !!popup.querySelector('.docs-blameview-next-edit-button[aria-disabled="false"]')
+    );
+  }
+
   private historyContext(element: HTMLElement, popup: HTMLElement) {
     const partial = isPartialHistory(element);
     if (!partial && !element.querySelector('.waffle-blameview-formula-text'))
@@ -227,112 +249,82 @@ export class PopupController {
       currentValue,
     };
   }
-  private valueAlreadyRendered(previous: ValueState | undefined, signature: string): boolean {
-    return (
-      previous?.signature === signature &&
-      !!(previous.pending || previous.ui?.shadowHost.isConnected)
-    );
-  }
-
-  private prepareValue(element: HTMLElement, popup: HTMLElement, state: PopupState) {
-    const previous = state.values.get(element);
-    const context = this.historyContext(element, popup);
-    if (this.valueAlreadyRendered(previous, context.signature)) return;
-    if (previous) {
-      this.disposeValue(element, previous);
-      state.values.delete(element);
-    }
-    const sequence = state.navigationSequence;
-    if (!get(settings).diffEnabled) {
-      this.finishNavigation(popup, state, sequence);
-      return;
-    }
-    const parsed = parseHistory(element, context);
-    if (!parsed.ok) {
-      element.dataset.speNativeVisible = '';
-      this.finishNavigation(popup, state, sequence);
-      return;
-    }
-    delete element.dataset.speNativeVisible;
-    const valueState: ValueState = {
-      signature: context.signature,
-      display: element.style.display,
-      priority: element.style.getPropertyPriority('display'),
-      pending: true,
-      disposed: false,
-    };
-    state.values.set(element, valueState);
-    return { valueState, change: parsed.change, sequence };
-  }
-
-  private deleteValue(element: HTMLElement, state: PopupState, valueState: ValueState) {
-    this.disposeValue(element, valueState);
-    if (state.values.get(element) === valueState) state.values.delete(element);
-  }
-
-  private renderTimeout(
-    element: HTMLElement,
-    popup: HTMLElement,
-    state: PopupState,
-    valueState: ValueState,
-    sequence: number,
-  ) {
-    return setTimeout(() => {
-      if (!valueState.pending || state.values.get(element) !== valueState || state.disposed) return;
-      this.deleteValue(element, state, valueState);
-      if (element.isConnected) element.dataset.speNativeVisible = '';
-      this.finishNavigation(popup, state, sequence);
-    }, RENDER_TIMEOUT);
-  }
-
-  private canMountValue(
-    element: HTMLElement,
-    popup: HTMLElement,
-    state: PopupState,
-    valueState: ValueState,
-  ): boolean {
-    return (
-      this.running &&
-      !state.disposed &&
-      !valueState.disposed &&
-      element.isConnected &&
-      this.historyContext(element, popup).signature === valueState.signature &&
-      state.pendingNavigation === undefined &&
-      this.historyContentVisible(element)
-    );
+  private showNativeValue(element: HTMLElement, popup: HTMLElement, state: PopupState) {
+    this.deleteValue(element, state);
+    element.dataset.speNativeVisible = '';
+    this.finishNavigation(popup, state);
   }
 
   private mountValue(
     element: HTMLElement,
     popup: HTMLElement,
     state: PopupState,
-    valueState: ValueState,
+    signature: string,
     ui: Ui,
-    sequence: number,
   ) {
-    if (!this.canMountValue(element, popup, state, valueState)) {
-      ui.remove();
-      if (state.values.get(element) === valueState) state.values.delete(element);
-      this.schedule(popup);
-      return;
-    }
-    valueState.ui = ui;
+    // Mount first so the old diff remains visible until its replacement is ready.
     ui.mount();
+    const previous = state.values.get(element);
+    const display = previous?.display ?? element.style.display;
+    const priority = previous?.priority ?? element.style.getPropertyPriority('display');
+    previous?.ui.remove();
+    state.values.set(element, { signature, display, priority, ui });
     if (popup.hasAttribute('data-spe-sheet-scrolling')) setSheetScrolling(popup, true);
     state.contentWasHidden = false;
     // Preserve original nodes for Sheets navigation and unsupported-history fallback.
     setStyle(element, 'display', 'none');
-    this.finishNavigation(popup, state, sequence);
+    delete element.dataset.speNativeVisible;
+    this.finishNavigation(popup, state, element);
     this.clamp(popup);
   }
 
   private async enhanceValue(element: HTMLElement, popup: HTMLElement, state: PopupState) {
-    const job = this.prepareValue(element, popup, state);
-    if (!job) return;
-    const { valueState, change, sequence } = job;
-    const timeout = this.renderTimeout(element, popup, state, valueState, sequence);
+    const context = this.historyContext(element, popup);
+    const { signature } = context;
+    const previous = state.values.get(element);
+    if (previous?.signature === signature && popup.contains(previous.ui.shadowHost)) {
+      state.renders.delete(element);
+      if (state.outgoingValue === element) {
+        if (element.nextElementSibling !== previous.ui.shadowHost)
+          element.after(previous.ui.shadowHost);
+        state.contentWasHidden = false;
+        this.finishNavigation(popup, state, element);
+      }
+      return;
+    }
+    const pending = state.renders.get(element);
+    if (pending?.signature === signature) {
+      if (pending.timedOut) this.showNativeValue(element, popup, state);
+      return;
+    }
+    const parsed = parseHistory(element, context);
+    if (!parsed.ok) {
+      state.renders.delete(element);
+      this.showNativeValue(element, popup, state);
+      return;
+    }
+    delete element.dataset.speNativeVisible;
+    await this.renderValue(element, popup, state, signature, parsed.change);
+  }
+
+  private async renderValue(
+    element: HTMLElement,
+    popup: HTMLElement,
+    state: PopupState,
+    signature: string,
+    change: CellChange,
+  ) {
+    const job = { signature, timedOut: false };
+    state.renders.set(element, job);
+    const isCurrent = () => state.renders.get(element) === job;
+    const timeout = setTimeout(() => {
+      // Keep the job so showing the native value cannot trigger a second render.
+      job.timedOut = true;
+      if (isCurrent()) this.schedule(popup);
+    }, RENDER_TIMEOUT);
+    let ui: Ui | undefined;
     try {
-      const ui = await createShadowRootUi(this.ctx, {
+      ui = await createShadowRootUi(this.ctx, {
         name: 'spe-history-diff',
         position: 'inline',
         anchor: element,
@@ -343,17 +335,39 @@ export class PopupController {
           if (app) void unmount(app);
         },
       });
-      this.mountValue(element, popup, state, valueState, ui, sequence);
+      if (isCurrent() && this.canMountValue(element, popup, state, signature)) {
+        this.mountValue(element, popup, state, signature, ui);
+      } else {
+        ui.remove();
+        this.schedule(popup);
+      }
     } catch (error) {
-      this.deleteValue(element, state, valueState);
-      if (sequence === state.navigationSequence && element.isConnected)
-        element.dataset.speNativeVisible = '';
-      this.finishNavigation(popup, state, sequence);
+      ui?.remove();
+      if (isCurrent() && this.canMountValue(element, popup, state, signature))
+        this.showNativeValue(element, popup, state);
       console.warn('[Sheets Popup Enhancer] diff UIを設置できませんでした', error);
     } finally {
       clearTimeout(timeout);
-      valueState.pending = false;
+      if (isCurrent()) state.renders.delete(element);
     }
+  }
+
+  private canMountValue(
+    element: HTMLElement,
+    popup: HTMLElement,
+    state: PopupState,
+    signature: string,
+  ): boolean {
+    return (
+      this.running &&
+      !state.disposed &&
+      popup.isConnected &&
+      popup.contains(element) &&
+      get(settings).diffEnabled &&
+      state.pendingNavigation === undefined &&
+      this.historyContentVisible(element) &&
+      this.historyContext(element, popup).signature === signature
+    );
   }
 
   private async addGrip(element: HTMLElement, state: PopupState) {
@@ -418,7 +432,7 @@ export class PopupController {
       disposed: false,
       contentWasHidden: false,
       values: new Map(),
-      navigationSequence: 0,
+      renders: new Map(),
       onNavigation: (event) => this.onNavigation(element, event),
     };
     this.popups.set(element, state);
@@ -445,39 +459,37 @@ export class PopupController {
     );
   }
 
-  private beginNavigation(element: HTMLElement, state: PopupState) {
-    const enhanced = [...state.values.values()].some((value) => value.ui?.shadowHost.isConnected);
-    if (!enhanced || !get(settings).diffEnabled) return;
-    this.finishNavigation(element, state);
-    const sequence = ++state.navigationSequence;
-    element.dataset.speHistoryLoading = '';
-    state.navigationTimer = setTimeout(() => {
-      if (sequence !== state.navigationSequence || state.disposed) return;
-      state.pendingNavigation = undefined;
-      this.finishNavigation(element, state, sequence);
-      this.schedule(element);
-    }, NAVIGATION_TIMEOUT);
-  }
-
-  private clearValues(state: PopupState) {
-    for (const [value, valueState] of state.values) this.disposeValue(value, valueState);
-    state.values.clear();
-  }
-
   private onNavigation(element: HTMLElement, event: Event) {
     const button = this.navigationButton(element, event);
     if (!button || button.getAttribute('aria-disabled') !== 'false') return;
-    const current = element.querySelector<HTMLElement>(VALUE);
     const state = this.popups.get(element);
-    if (!current || !state) return;
+    if (!state) return;
     if (event instanceof KeyboardEvent) this.resetHistoryScroll(element);
-    delete current.dataset.speNativeVisible;
-    this.beginNavigation(element, state);
-    // At the end of history, Sheets hides content but retains its value DOM.
-    state.pendingNavigation = undefined;
-    if (!state.contentWasHidden && this.historyContentVisible(current))
-      state.pendingNavigation = current.innerHTML;
-    this.clearValues(state);
+    if (!get(settings).diffEnabled) return;
+    const current = element.querySelector<HTMLElement>(VALUE);
+    const outgoing = state.outgoingValue ?? this.renderedValue(state, current);
+    if (!outgoing) return;
+
+    state.renders.clear();
+    state.outgoingValue = outgoing;
+    element.dataset.speHistoryLoading = '';
+    // A hidden or replaced native value can be ready even when its HTML is unchanged.
+    state.pendingNavigation =
+      current === outgoing && !state.contentWasHidden && this.historyContentVisible(current)
+        ? current.innerHTML
+        : undefined;
+    if (state.navigationTimer !== undefined) clearTimeout(state.navigationTimer);
+    state.navigationTimer = setTimeout(() => {
+      state.navigationTimer = undefined;
+      state.pendingNavigation = undefined;
+      this.schedule(element);
+    }, NAVIGATION_TIMEOUT);
+    this.schedule(element);
+  }
+
+  private renderedValue(state: PopupState, current: HTMLElement | null) {
+    if (current && state.values.has(current)) return current;
+    if (state.values.size === 1) return state.values.keys().next().value;
   }
 
   private updateVisibility(element: HTMLElement, state: PopupState) {
@@ -496,42 +508,55 @@ export class PopupController {
     else syncGripPosition(element, state);
   }
 
-  private discardStaleValues(element: HTMLElement, state: PopupState) {
-    for (const [value, valueState] of state.values) {
-      if (element.contains(value) && get(settings).diffEnabled && this.historyContentVisible(value))
-        continue;
-      this.disposeValue(value, valueState);
-      state.values.delete(value);
+  private discardStaleValues(popup: HTMLElement, state: PopupState, visible: HTMLElement[]) {
+    for (const value of state.renders.keys()) {
+      if (!popup.contains(value)) state.renders.delete(value);
+    }
+    for (const value of state.values.keys()) {
+      if (value !== state.outgoingValue && !visible.includes(value)) this.deleteValue(value, state);
     }
   }
 
-  private updatePendingNavigation(element: HTMLElement, state: PopupState) {
-    const current = element.querySelector<HTMLElement>(VALUE);
-    if (!current) return;
-    if (!this.historyContentVisible(current)) state.contentWasHidden = true;
-    if (state.pendingNavigation === undefined) return;
-    // Complete values can render immediately. Partial histories wait for a value change.
-    if (
-      current.innerHTML !== state.pendingNavigation ||
-      (this.historyContentVisible(current) && !isPartialHistory(current))
-    ) {
-      state.pendingNavigation = undefined;
-    }
+  private keepOutgoingVisible(popup: HTMLElement, state: PopupState) {
+    const outgoing = state.outgoingValue;
+    if (!outgoing) return;
+    const host = state.values.get(outgoing)?.ui.shadowHost;
+    if (!host || (popup.contains(host) && this.historyContentVisible(host))) return;
+    // Sheets can temporarily hide or replace the container that held the old diff.
+    const content = outgoing.closest('.docs-blameview-content');
+    if (content && popup.contains(content)) content.after(host);
+    else (popup.querySelector('.docs-blameview') ?? popup).append(host);
   }
 
   private syncHistory(element: HTMLElement, state: PopupState) {
-    this.discardStaleValues(element, state);
-    if (!get(settings).diffEnabled) this.finishNavigation(element, state);
-    this.updatePendingNavigation(element, state);
-    if (state.pendingNavigation !== undefined) return;
-    for (const value of element.querySelectorAll<HTMLElement>(VALUE)) {
-      if (this.historyContentVisible(value)) void this.enhanceValue(value, element, state);
+    if (!get(settings).diffEnabled) {
+      this.finishNavigation(element, state);
+      state.renders.clear();
+      this.discardStaleValues(element, state, []);
+      return;
     }
+    const values = [...element.querySelectorAll<HTMLElement>(VALUE)];
+    const visible = values.filter((value) => this.historyContentVisible(value));
+    this.discardStaleValues(element, state, visible);
+    const current = visible[0];
+    if (!current) {
+      state.contentWasHidden = true;
+      if (state.outgoingValue && this.historyEndShown(element))
+        this.finishNavigation(element, state);
+      return;
+    }
+    if (state.pendingNavigation !== undefined) {
+      if (current === state.outgoingValue && current.innerHTML === state.pendingNavigation) return;
+      state.pendingNavigation = undefined;
+    }
+    for (const value of visible) void this.enhanceValue(value, element, state);
   }
 
   private sync(element: HTMLElement) {
     if (!element.isConnected || !this.running) return;
     const state = this.popups.get(element) ?? this.registerPopup(element);
+    // The popup can have zero height while Sheets replaces all of its content.
+    this.keepOutgoingVisible(element, state);
     this.updateVisibility(element, state);
     void this.addGrip(element, state);
     if (this.isHistory(element)) this.syncHistory(element, state);
@@ -544,7 +569,8 @@ export class PopupController {
     element.removeEventListener('click', state.onNavigation, true);
     element.removeEventListener('keydown', state.onNavigation, true);
     state.grip?.remove();
-    for (const [value, valueState] of state.values) this.disposeValue(value, valueState);
+    state.renders.clear();
+    for (const value of state.values.keys()) this.deleteValue(value, state);
     for (const value of element.querySelectorAll<HTMLElement>('[data-spe-native-visible]'))
       delete value.dataset.speNativeVisible;
     restoreProperty(element, 'width', state.width, state.priority);
