@@ -4,9 +4,9 @@
 
 ## 日本語
 
-最終更新日：2026年11月8日
+最終更新日：2026年11月12日
 
-Sheets Popup Enhancer（以下「本拡張機能」）は、Google スプレッドシートのコメントとセルの編集履歴を読みやすく表示します。このポリシーは、本拡張機能によるデータの扱いを説明します。
+本ポリシーは、Sheets Popup Enhancer（以下「本拡張機能」）によるデータの扱いを説明します。
 
 ### スプレッドシートの内容
 
@@ -14,7 +14,7 @@ Sheets Popup Enhancer（以下「本拡張機能」）は、Google スプレッ�
 
 これらの処理はブラウザ内で行います。本拡張機能は、セル値、数式、編集履歴、コメントの内容を設定として保存せず、開発者のサーバーや第三者に送信・共有しません。
 
-差分メニューでコピーを選択した場合は、指定された変更前または変更後の値を端末のクリップボードに書き込みます。
+差分表示のメニューからコピーを選択した場合は、指定された変更前または変更後の値を端末のクリップボードに書き込みます。
 
 ### 設定の保存と削除
 
@@ -32,13 +32,13 @@ Sheets Popup Enhancer（以下「本拡張機能」）は、Google スプレッ�
 
 ### お問い合わせ
 
-プライバシーに関するお問い合わせは、[GitHub Issues](https://github.com/wintorse/sheets-popup-enhancer/issues)からお寄せください。セルの内容など、公開したくない情報は投稿しないでください。
+プライバシーに関するお問い合わせは、[GitHub Issues](https://github.com/wintorse/sheets-popup-enhancer/issues)からお寄せください。
 
 ## English
 
-Last updated: November 8, 2026
+Last updated: November 12, 2026
 
-Sheets Popup Enhancer (the “extension”) makes comments and cell edit history in Google Sheets easier to read. This policy explains how the extension handles data.
+This policy explains how Sheets Popup Enhancer (the “extension”) handles data.
 
 ### Spreadsheet content
 
@@ -46,7 +46,7 @@ The extension accesses displayed comments and cell edit history to adjust the po
 
 These operations take place in the browser. The extension does not save cell values, formulas, edit history, or comment content as settings, and it does not send or share them with the developer's servers or third parties.
 
-When you choose a copy action from the diff menu, the selected before or after value is written to your device's clipboard.
+When you choose a copy action from the diff view's menu, the selected before or after value is written to your device's clipboard.
 
 ### Settings and deletion
 
@@ -64,4 +64,4 @@ This policy will be updated if the extension's data practices change.
 
 ### Contact
 
-For privacy questions, please use [GitHub Issues](https://github.com/wintorse/sheets-popup-enhancer/issues). Do not post cell contents or other information you do not wish to make public.
+For privacy questions, please use [GitHub Issues](https://github.com/wintorse/sheets-popup-enhancer/issues).
