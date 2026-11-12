@@ -57,3 +57,8 @@ html[data-spe-diff-enabled]
 [data-spe-history-loading] .docs-blameview-value-content {
   display: none !important;
 }
+/* Override the other extension's scroll-time inline styles only while opted in. */
+[id$='-grid-container'] > #rh-app-container[data-spe-row-highlighter] {
+  z-index: 3 !important;
+  top: 0 !important;
+}

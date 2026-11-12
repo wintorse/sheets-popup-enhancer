@@ -5,6 +5,7 @@ import { settings, watchSettings } from '../settings';
 import { isPartialHistory, parseHistory, readFormulaBar, type CellChange } from '../sheets/history';
 import HistoryDiff from '../ui/HistoryDiff.svelte';
 import ResizeGrip from '../ui/ResizeGrip.svelte';
+import { RowHighlighterCompatibility } from './row-highlighter';
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 const POPUPS = '.docos-anchoreddocoview, .waffle-blameview';
 const VALUE = '.docs-blameview-value-content';
@@ -28,6 +29,7 @@ function setSheetScrolling(popup: HTMLElement, scrolling: boolean) {
 }
 
 export class PopupController {
+  private rowHighlighter = new RowHighlighterCompatibility();
   private style = document.createElement('style');
   private popups = new Map<HTMLElement, PopupState>();
   private sheetScrollTimer: ReturnType<typeof setTimeout> | undefined;
@@ -123,6 +125,7 @@ export class PopupController {
     document.addEventListener('scroll', this.onSheetScroll, true);
     for (const popup of document.querySelectorAll<HTMLElement>(POPUPS)) this.schedule(popup);
     this.unsubscribe = settings.subscribe((value) => {
+      this.rowHighlighter.setEnabled(value.rowHighlighterCompatibility);
       this.style.textContent = `${this.pageCss}\n[data-spe-popup] { --spe-font-scale: ${value.fontScale / 100}; }`;
       document.documentElement.toggleAttribute('data-spe-diff-enabled', value.diffEnabled);
       if (value.diffEnabled && !this.diffWasEnabled) {
@@ -150,6 +153,7 @@ export class PopupController {
     this.sizeObserver.disconnect();
     this.unsubscribe();
     this.stopWatching();
+    this.rowHighlighter.stop();
     for (const [popup, state] of this.popups) this.disposePopup(popup, state);
     this.popups.clear();
     this.queue.clear();
