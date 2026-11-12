@@ -60,6 +60,8 @@ pnpm build:firefox
 - 「…」メニューから変更前・変更後の値をそれぞれコピー
 - 設定画面でのカスタマイズ
 
+Sheets Row Highlighter（[GitHub](https://github.com/matsu7089/sheets-row-highlighter), [Chrome ウェブストア](https://chromewebstore.google.com/detail/cejijldbedfmdehondfmoadlkhgjcmkd?utm_source=item-share-cb), [Firefox アドオン](https://addons.mozilla.org/firefox/addon/sheets-row-highlighter/)）と併用する場合、コメントと編集履歴をハイライトより手前に表示します。設定画面で無効にできます。
+
 ## ディレクトリ構成
 
 ```text
