@@ -8,6 +8,7 @@ export interface Settings {
   fontScale: number;
   layout: DiffLayout;
   diffEnabled: boolean;
+  rowHighlighterCompatibility: boolean;
 }
 export const defaults: Settings = {
   commentWidth: 440,
@@ -15,6 +16,7 @@ export const defaults: Settings = {
   fontScale: 100,
   layout: 'split',
   diffEnabled: true,
+  rowHighlighterCompatibility: true,
 };
 export const settings = writable<Settings>({ ...defaults });
 const KEY = 'spe.settings.v1';
@@ -38,6 +40,10 @@ export function normalizeSettings(value: unknown): Settings {
     fontScale: normalizeNumber(raw.fontScale, defaults.fontScale, 80, 120, 10),
     layout: raw.layout === 'unified' || raw.layout === 'vertical' ? 'unified' : defaults.layout,
     diffEnabled: typeof raw.diffEnabled === 'boolean' ? raw.diffEnabled : defaults.diffEnabled,
+    rowHighlighterCompatibility:
+      typeof raw.rowHighlighterCompatibility === 'boolean'
+        ? raw.rowHighlighterCompatibility
+        : defaults.rowHighlighterCompatibility,
   };
 }
 

@@ -60,6 +60,8 @@ For development, run `pnpm dev` for Chrome or `pnpm dev:firefox` for Firefox.
 - Copy the before or after value from the “…” menu.
 - Customize the extension in the settings panel.
 
+When used with Sheets Row Highlighter ([GitHub](https://github.com/matsu7089/sheets-row-highlighter), [Chrome Web Store](https://chromewebstore.google.com/detail/cejijldbedfmdehondfmoadlkhgjcmkd?utm_source=item-share-cb), [Firefox Add-ons](https://addons.mozilla.org/firefox/addon/sheets-row-highlighter/)), comments and edit history appear above its highlights. You can disable this adjustment in the settings panel.
+
 ## Project structure
 
 ```text

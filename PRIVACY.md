@@ -18,7 +18,7 @@
 
 ### 設定の保存と削除
 
-本拡張機能は、コメントと編集履歴の初期幅、文字サイズ、差分表示の有効・無効、初期表示形式をブラウザの端末内ストレージに保存します。これらの設定は端末間で同期されません。
+本拡張機能は、コメントと編集履歴の初期幅、文字サイズ、差分表示の有効・無効、初期表示形式、Sheets Row Highlighterのハイライトとコメント・編集履歴の表示順を調整するかどうかをブラウザの端末内ストレージに保存します。これらの設定は端末間で同期されません。
 
 設定パネルの「リセット」で設定を初期値に戻せます。Chromeでは、本拡張機能を削除すると保存された設定も削除されます。
 
@@ -50,7 +50,7 @@ When you choose a copy action from the diff view's menu, the selected before or 
 
 ### Settings and deletion
 
-The extension saves the default widths for comments and edit history, text size, whether the diff is enabled, and the initial layout in the browser's local storage. These settings are not synced between devices.
+The extension saves the default widths for comments and edit history, text size, whether the diff is enabled, the initial layout, and whether to adjust the display order of Sheets Row Highlighter's highlights and the comment and edit history popups in the browser's local storage. These settings are not synced between devices.
 
 You can restore the default settings using **Reset** in the settings panel. In Chrome, removing the extension also deletes its saved settings.
 

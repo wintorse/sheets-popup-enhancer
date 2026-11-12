@@ -1,5 +1,7 @@
 const messages = {
   ar: {
+    rowHighlighterOrder: 'ترتيب عرض Sheets Row Highlighter',
+    rowHighlighterCompatibility: 'ضبط',
     settings: 'الإعدادات',
     fontSize: 'حجم النص',
     scale: 'المقياس',
@@ -26,6 +28,8 @@ const messages = {
     simplified: 'لا يتم تمييز الكلمات في النصوص الطويلة.',
   },
   de: {
+    rowHighlighterOrder: 'Anzeigereihenfolge von Sheets Row Highlighter',
+    rowHighlighterCompatibility: 'Anpassen',
     settings: 'Einstellungen',
     fontSize: 'Schriftgröße',
     scale: 'Skalierung',
@@ -53,6 +57,8 @@ const messages = {
     simplified: 'Bei langem Text wird auf die Hervorhebung einzelner Wörter verzichtet.',
   },
   en: {
+    rowHighlighterOrder: 'Sheets Row Highlighter display order',
+    rowHighlighterCompatibility: 'Adjust',
     settings: 'Settings',
     fontSize: 'Text size',
     scale: 'Scale',
@@ -79,6 +85,8 @@ const messages = {
     simplified: 'Word highlighting is omitted for long text.',
   },
   es: {
+    rowHighlighterOrder: 'Orden de visualización de Sheets Row Highlighter',
+    rowHighlighterCompatibility: 'Ajustar',
     settings: 'Configuración',
     fontSize: 'Tamaño del texto',
     scale: 'Escala',
@@ -105,6 +113,8 @@ const messages = {
     simplified: 'Se omite el resaltado de palabras para textos largos.',
   },
   fr: {
+    rowHighlighterOrder: 'Ordre d’affichage de Sheets Row Highlighter',
+    rowHighlighterCompatibility: 'Ajuster',
     settings: 'Paramètres',
     fontSize: 'Taille du texte',
     scale: 'Échelle',
@@ -131,6 +141,8 @@ const messages = {
     simplified: 'La mise en évidence des mots est omise pour les textes longs.',
   },
   id: {
+    rowHighlighterOrder: 'Urutan tampilan Sheets Row Highlighter',
+    rowHighlighterCompatibility: 'Sesuaikan',
     settings: 'Setelan',
     fontSize: 'Ukuran teks',
     scale: 'Skala',
@@ -157,6 +169,8 @@ const messages = {
     simplified: 'Penyorotan kata dihilangkan untuk teks panjang.',
   },
   ja: {
+    rowHighlighterOrder: 'Sheets Row Highlighterの表示順',
+    rowHighlighterCompatibility: '調整する',
     settings: '設定',
     fontSize: '文字サイズ',
     scale: '倍率',
@@ -183,6 +197,8 @@ const messages = {
     simplified: '長いテキストのため、単語の強調を省略しています。',
   },
   ko: {
+    rowHighlighterOrder: 'Sheets Row Highlighter 표시 순서',
+    rowHighlighterCompatibility: '조정',
     settings: '설정',
     fontSize: '글자 크기',
     scale: '배율',
@@ -209,6 +225,8 @@ const messages = {
     simplified: '텍스트가 길어 단어 강조를 생략합니다.',
   },
   pt_BR: {
+    rowHighlighterOrder: 'Ordem de exibição do Sheets Row Highlighter',
+    rowHighlighterCompatibility: 'Ajustar',
     settings: 'Configurações',
     fontSize: 'Tamanho do texto',
     scale: 'Escala',
@@ -236,6 +254,8 @@ const messages = {
     simplified: 'O destaque de palavras é omitido para textos longos.',
   },
   ru: {
+    rowHighlighterOrder: 'Порядок отображения Sheets Row Highlighter',
+    rowHighlighterCompatibility: 'Настроить',
     settings: 'Настройки',
     fontSize: 'Размер текста',
     scale: 'Масштаб',
@@ -262,6 +282,8 @@ const messages = {
     simplified: 'Подсветка слов для длинного текста отключена.',
   },
   zh_CN: {
+    rowHighlighterOrder: 'Sheets Row Highlighter 的显示顺序',
+    rowHighlighterCompatibility: '调整',
     settings: '设置',
     fontSize: '文字大小',
     scale: '缩放比例',
@@ -288,6 +310,8 @@ const messages = {
     simplified: '文本过长，已省略单词高亮。',
   },
   zh_TW: {
+    rowHighlighterOrder: 'Sheets Row Highlighter 的顯示順序',
+    rowHighlighterCompatibility: '調整',
     settings: '設定',
     fontSize: '文字大小',
     scale: '縮放比例',
