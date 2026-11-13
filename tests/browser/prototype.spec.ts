@@ -502,6 +502,9 @@ test('extension settings: save and restore local settings', async ({ page }) => 
   await mockExtension(page);
   await page.goto('/__extension__/popup.html');
   await expect(page.getByRole('button', { name: 'リセット' })).toBeEnabled();
+  const compatibility = page.getByRole('checkbox', { name: '調整する' });
+  await expect(compatibility).toBeChecked();
+  await compatibility.uncheck();
   const fontScale = page.getByRole('slider', { name: '文字サイズ 倍率' });
   await expect(fontScale).toHaveValue('100');
   await expect(fontScale).toHaveAttribute('min', '80');
@@ -552,11 +555,13 @@ test('extension settings: save and restore local settings', async ({ page }) => 
       commentWidth: Number(changedWidth),
       fontScale: 120,
       diffEnabled: false,
+      rowHighlighterCompatibility: false,
     });
   await page.getByRole('button', { name: 'リセット' }).click();
   await expect(page.getByLabel('初期表示')).toHaveValue('split');
   await expect(fontScale).toHaveValue('100');
   await expect(page.getByRole('checkbox', { name: '有効にする' })).toBeChecked();
+  await expect(compatibility).toBeChecked();
   await expect
     .poll(() =>
       page.evaluate(async () => {
@@ -576,7 +581,148 @@ test('extension settings: save and restore local settings', async ({ page }) => 
         return (await chrome.storage.local.get('spe.settings.v1'))['spe.settings.v1'];
       }),
     )
-    .toMatchObject({ layout: 'split', commentWidth: 440, fontScale: 100 });
+    .toMatchObject({
+      layout: 'split',
+      commentWidth: 440,
+      fontScale: 100,
+      rowHighlighterCompatibility: true,
+    });
+});
+
+test('content script: Row Highlighter compatibility keeps native popups above highlights', async ({
+  page,
+}) => {
+  await mockExtension(page);
+  // Synthetic stacking contexts and inline scroll updates, not live extension DOM.
+  await page.route('**/fixtures/row-highlighter', (route) =>
+    route.fulfill({
+      contentType: 'text/html',
+      body: `<!doctype html><html><body>
+      <div id="sheet" style="position:absolute;left:40px;top:100px;width:1000px;height:700px">
+        <div id="0-grid-container" style="position:absolute;inset:0;z-index:1;background:white"><div id="grid-content"></div></div>
+        <div class="docos-anchoreddocoview" style="position:absolute;left:20px;top:20px;width:400px;height:100px;z-index:6;background:white">comment</div>
+        <div class="waffle-blameview" style="position:absolute;left:20px;top:200px;width:400px;height:100px;z-index:6;background:white"><div class="docs-blameview"><div class="docs-blameview-value-content">unsupported history</div></div></div>
+        <div id="before"></div><div id="rh-app-container" style="position:absolute;left:0;top:0;width:100%;height:100%;z-index:9999;background:rgba(255,0,0,.5)"></div><div id="after"></div>
+      </div></body></html>`,
+    }),
+  );
+  await page.goto('/fixtures/row-highlighter');
+  await setCompatibility(false);
+  await page.addScriptTag({ path: extensionOutput('content-scripts/sheets.js') });
+  const highlight = page.locator('#rh-app-container');
+  const comment = page.locator('.docos-anchoreddocoview');
+  const history = page.locator('.waffle-blameview');
+  await expect(comment).toHaveAttribute('data-spe-popup', 'comment');
+  await expect(highlight).not.toHaveAttribute('data-spe-row-highlighter');
+  await expect(highlight).toHaveCSS('z-index', '9999');
+
+  async function setCompatibility(enabled: boolean) {
+    await page.evaluate(async (rowHighlighterCompatibility) => {
+      const api = (
+        globalThis as unknown as {
+          chrome: { storage: { local: { set: (value: unknown) => Promise<void> } } };
+        }
+      ).chrome;
+      await api.storage.local.set({ 'spe.settings.v1': { rowHighlighterCompatibility } });
+    }, enabled);
+  }
+  async function topElementIsPopup(popup: Locator) {
+    return popup.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      return element.contains(document.elementFromPoint(rect.x + 10, rect.y + 10));
+    });
+  }
+  expect(await topElementIsPopup(comment)).toBe(false);
+  expect(await topElementIsPopup(history)).toBe(false);
+  await setCompatibility(true);
+  await expect(page.locator('[id="0-grid-container"] > #rh-app-container:last-child')).toHaveCount(
+    1,
+  );
+  await expect(highlight).toHaveCSS('top', '0px');
+  await expect(highlight).toHaveCSS('z-index', '3');
+  expect(await topElementIsPopup(comment)).toBe(true);
+  expect(await topElementIsPopup(history)).toBe(true);
+
+  for (const [top, left] of [
+    [-140, -80],
+    [-320, 60],
+    [90, 130],
+  ]) {
+    await highlight.evaluate(
+      (node, offset) => {
+        node.style.top = `${offset.top}px`;
+        node.style.left = `${offset.left}px`;
+        node.style.zIndex = '9999';
+        node.dispatchEvent(new Event('scroll', { bubbles: true }));
+      },
+      { top, left },
+    );
+    await expect(highlight).toHaveCSS('top', '0px');
+    await expect(highlight).toHaveCSS('left', `${left}px`);
+    await expect(highlight).toHaveCSS('z-index', '3');
+  }
+  await setCompatibility(false);
+  await expect(page.locator('#before + #rh-app-container + #after')).toHaveCount(1);
+  await expect(highlight).not.toHaveAttribute('data-spe-row-highlighter');
+  await expect(highlight).toHaveCSS('top', '90px');
+  await expect(highlight).toHaveCSS('z-index', '9999');
+  // Reloading the content script cleans up the previous instance before reapplying.
+  await setCompatibility(true);
+  await expect(highlight).toHaveCSS('z-index', '3');
+  await page.addScriptTag({ path: extensionOutput('content-scripts/sheets.js') });
+  await expect(highlight).toHaveAttribute('data-spe-row-highlighter');
+  await setCompatibility(false);
+  await expect(page.locator('#before + #rh-app-container + #after')).toHaveCount(1);
+
+  // Sheets can cache hidden grids or replace them while preserving the same app instance.
+  const originalApp = await highlight.elementHandle();
+  await setCompatibility(true);
+  await page.locator('[id="0-grid-container"]').evaluate((first) => {
+    const second = document.createElement('div');
+    second.id = '123-grid-container';
+    second.style.cssText = (first as HTMLElement).style.cssText;
+    first.parentElement!.append(second);
+    (first as HTMLElement).style.display = 'none';
+  });
+  await expect(page.locator('[id="123-grid-container"] > #rh-app-container')).toHaveCount(1);
+  await expect(highlight).toHaveCSS('top', '0px');
+  await expect(highlight).toHaveCSS('z-index', '3');
+  expect(await topElementIsPopup(comment)).toBe(true);
+  expect(await topElementIsPopup(history)).toBe(true);
+
+  await page.locator('[id="123-grid-container"]').evaluate((second) => {
+    (second as HTMLElement).hidden = true;
+    document.getElementById('0-grid-container')!.style.display = '';
+  });
+  await expect(page.locator('[id="0-grid-container"] > #rh-app-container')).toHaveCount(1);
+  await page.locator('[id="0-grid-container"]').evaluate((first) => first.remove());
+  await expect(page.locator('#before + #rh-app-container + #after')).toHaveCount(1);
+  await expect(highlight).not.toHaveAttribute('data-spe-row-highlighter');
+  await page.locator('[id="123-grid-container"]').evaluate((second) => {
+    (second as HTMLElement).hidden = false;
+  });
+  await expect(page.locator('[id="123-grid-container"] > #rh-app-container')).toHaveCount(1);
+
+  await page.locator('[id="123-grid-container"]').evaluate((second) => {
+    const third = document.createElement('div');
+    third.id = '456-grid-container';
+    third.style.cssText = (second as HTMLElement).style.cssText;
+    second.replaceWith(third);
+  });
+  await expect(page.locator('[id="456-grid-container"] > #rh-app-container')).toHaveCount(1);
+  await page.locator('[id="456-grid-container"]').evaluate((third) => {
+    third.replaceChildren(document.createElement('canvas'));
+  });
+  await expect(
+    page.locator('[id="456-grid-container"] > #rh-app-container:last-child'),
+  ).toHaveCount(1);
+  expect(await highlight.evaluate((element, original) => element === original, originalApp)).toBe(
+    true,
+  );
+  await expect(highlight).toHaveCSS('z-index', '3');
+  await setCompatibility(false);
+  await expect(page.locator('#before + #rh-app-container + #after')).toHaveCount(1);
+  await originalApp?.dispose();
 });
 
 for (const [previous, current] of [
@@ -1078,7 +1224,8 @@ test('content script: partial history follows latest state and formula bar chang
   });
   await expect(diff).toHaveCount(1);
   await page.locator('.docs-blameview-previous-edit-button').dispatchEvent('click');
-  await expect(diff).toHaveCount(0);
+  await expect(diff.locator('.after .value')).toHaveText('apple orange citrus');
+  await expect(diff.locator('.after .value')).toBeVisible();
   await expect(native).toBeHidden();
   await native.evaluate((node) => {
     node.innerHTML = '<span class="docs-blame-bold-text">Added:</span> "old"';
@@ -1089,6 +1236,7 @@ test('content script: partial history follows latest state and formula bar chang
 test('content script: returning from the end of history restores a reused value', async ({
   page,
 }) => {
+  // Synthetic fixture for the native end-of-history message and navigation controls.
   await mockExtension(page);
   await page.route('**/fixtures/history-end', (route) =>
     route.fulfill({
@@ -1108,6 +1256,7 @@ test('content script: returning from the end of history restores a reused value'
   });
   const diff = page.locator('spe-history-diff');
   const content = page.locator('.docs-blameview-content');
+  const message = page.locator('.docs-blameview-message');
   const previous = page.locator('.docs-blameview-previous-edit-button');
   const next = page.locator('.docs-blameview-next-edit-button');
   await expect(diff.locator('.after .value')).toHaveText('abc');
@@ -1117,11 +1266,18 @@ test('content script: returning from the end of history restores a reused value'
   });
   await previous.evaluate((node) => node.setAttribute('aria-disabled', 'true'));
   await next.evaluate((node) => node.setAttribute('aria-disabled', 'false'));
+  await message.evaluate((node) => {
+    (node as HTMLElement).style.display = 'block';
+  });
   await expect(diff).toHaveCount(0);
+  await expect(message).toBeVisible();
   // Sheets reuses the previous value node without changing its innerHTML.
   // Sheets may reveal the same value before the navigation click reaches the extension.
   await content.evaluate((node) => {
     (node as HTMLElement).style.display = 'block';
+  });
+  await message.evaluate((node) => {
+    (node as HTMLElement).style.display = 'none';
   });
   await next.dispatchEvent('click');
   await previous.evaluate((node) => node.setAttribute('aria-disabled', 'false'));
@@ -1697,7 +1853,7 @@ test('content script: Korean postfix history handles empty labels and verifies t
   expect(errors).toEqual([]);
 });
 
-test('content script: navigation hides native history until the new value is ready or unsupported', async ({
+test('content script: navigation keeps the old diff until the next history is ready', async ({
   page,
 }) => {
   // Synthetic fixture: Sheets can update a reused value node after the navigation click.
@@ -1723,10 +1879,11 @@ test('content script: navigation hides native history until the new value is rea
   const diff = page.locator('spe-history-diff');
   const previous = page.locator('.docs-blameview-previous-edit-button');
   await expect(diff.locator('.after .value')).toHaveText('two');
+  await page.clock.install();
 
   await previous.dispatchEvent('click');
   await expect(native).toBeHidden();
-  await expect(diff).toHaveCount(0);
+  await expect(diff.locator('.after .value')).toBeVisible();
   // Allow multiple paints before Sheets replaces the native value.
   await page.evaluate(
     () =>
@@ -1739,19 +1896,17 @@ test('content script: navigation hides native history until the new value is rea
   await content.evaluate((node) => {
     (node as HTMLElement).style.display = 'none';
   });
-  await page.evaluate(
-    () =>
-      new Promise<void>((resolve) =>
-        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
-      ),
-  );
+  await page.clock.runFor(350);
   await expect(popup).toHaveAttribute('data-spe-history-loading');
+  await expect(diff.locator('.after .value')).toBeVisible();
+  await expect(diff.locator('.after .value')).toHaveText('two');
   await native.evaluate((node) => {
     node.innerHTML =
       '<span class="docs-blame-bold-text">Replaced:</span> "two" <span class="docs-blame-bold-text">with</span> "three"';
     (node.parentElement as HTMLElement).style.display = 'block';
   });
   await expect(diff.locator('.after .value')).toHaveText('three');
+  await expect(diff).toHaveCount(1);
   await expect(native).toBeHidden();
   await expect(popup).not.toHaveAttribute('data-spe-history-loading');
 
@@ -1774,6 +1929,45 @@ test('content script: navigation hides native history until the new value is rea
   await expect(native).toBeHidden();
   await expect(popup).not.toHaveAttribute('data-spe-history-loading', { timeout: 1000 });
   await expect(diff.locator('.after .value')).toHaveText('again', { timeout: 1000 });
+
+  // Hold the next diff's stylesheet request while Sheets replaces the entire value container.
+  const cssPath = '**/__extension__/content-scripts/sheets.css';
+  let releaseCss = () => {};
+  const cssReady = new Promise<void>((resolve) => {
+    releaseCss = resolve;
+  });
+  await page.route(cssPath, async (route) => {
+    await cssReady;
+    await route.fallback();
+  });
+  try {
+    await popup
+      .locator('.docs-blameview-next-edit-button')
+      .evaluate((node) => node.setAttribute('aria-disabled', 'false'));
+    await popup.dispatchEvent('keydown', { key: 'ArrowRight' });
+    await content.evaluate((node) => node.remove());
+    await page.clock.runFor(350);
+    await expect(diff.locator('.after .value')).toBeVisible();
+    await expect(diff.locator('.after .value')).toHaveText('again');
+
+    const cssRequested = page.waitForRequest(cssPath);
+    await popup.locator('.docs-blameview').evaluate((node) => {
+      const replacement = document.createElement('div');
+      replacement.className = 'docs-blameview-content';
+      replacement.innerHTML =
+        '<div class="docs-blameview-value-content"><span class="docs-blame-bold-text">Added:</span> "newer"</div>';
+      node.append(replacement);
+    });
+    await cssRequested;
+    await expect(diff.locator('.after .value')).toBeVisible();
+    await expect(diff.locator('.after .value')).toHaveText('again');
+    await expect(native).toBeHidden();
+  } finally {
+    releaseCss();
+  }
+  await expect(diff.locator('.after .value')).toHaveText('newer');
+  await expect(diff).toHaveCount(1);
+  await expect(native).toBeHidden();
 });
 
 test('content script: native values start hidden and unsupported content is restored', async ({
@@ -1866,6 +2060,53 @@ test('content script: a stalled diff render restores native history', async ({ p
   await expect(page.locator('spe-history-diff .after .value')).toHaveText('value', {
     timeout: 5000,
   });
+  await expect(native).toBeHidden();
+});
+
+test('content script: navigation keeps the native fallback until the stalled render resolves', async ({
+  page,
+}) => {
+  await openDiffFixture(page);
+  await page.clock.install();
+  const cssPath = '**/__extension__/content-scripts/sheets.css';
+  const cssReady = Promise.withResolvers<void>();
+  let requests = 0;
+  await page.route(cssPath, async (route) => {
+    requests++;
+    await cssReady.promise;
+    await route.fallback();
+  });
+
+  const native = page.locator('.docs-blameview-value-content');
+  const diff = page.locator('spe-history-diff');
+  try {
+    await page.locator('.docs-blameview').evaluate((node) => {
+      const previous = document.createElement('button');
+      previous.className = 'docs-blameview-previous-edit-button';
+      previous.setAttribute('aria-disabled', 'false');
+      node.prepend(previous);
+      previous.click();
+    });
+    const cssRequested = page.waitForRequest(cssPath);
+    await setHistoryValues(page, 'new', 'later');
+    await cssRequested;
+    await expect(diff.locator('.after .value')).toHaveText('new');
+    await page.clock.runFor(1600);
+    await expect(native).toBeVisible();
+    await expect(native).toContainText('later');
+
+    // Sheets can replace the children with equivalent markup during the fallback.
+    await native.evaluate((node) => {
+      node.replaceChildren(...Array.from(node.childNodes, (child) => child.cloneNode(true)));
+    });
+    await page.clock.runFor(100);
+    await expect(native).toBeVisible();
+    await expect(diff).toHaveCount(0);
+    expect(requests).toBe(1);
+  } finally {
+    cssReady.resolve();
+  }
+  await expect(diff.locator('.after .value')).toHaveText('later');
   await expect(native).toBeHidden();
 });
 

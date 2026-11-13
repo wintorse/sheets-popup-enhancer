@@ -53,7 +53,12 @@ html[data-spe-diff-enabled]
   .docs-blameview-value-content:not([data-spe-native-visible]) {
   visibility: hidden !important;
 }
-/* Hide only the native value while a previously enhanced history is changing. */
+/* Keep the incoming native value from moving the outgoing diff during navigation. */
 [data-spe-history-loading] .docs-blameview-value-content {
-  visibility: hidden !important;
+  display: none !important;
+}
+/* Override the other extension's scroll-time inline styles only while opted in. */
+[id$='-grid-container'] > #rh-app-container[data-spe-row-highlighter] {
+  z-index: 3 !important;
+  top: 0 !important;
 }

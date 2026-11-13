@@ -4,9 +4,9 @@
 
 ## 日本語
 
-最終更新日：2026年11月8日
+最終更新日：2026年11月12日
 
-Sheets Popup Enhancer（以下「本拡張機能」）は、Google スプレッドシートのコメントとセルの編集履歴を読みやすく表示します。このポリシーは、本拡張機能によるデータの扱いを説明します。
+本ポリシーは、Sheets Popup Enhancer（以下「本拡張機能」）によるデータの扱いを説明します。
 
 ### スプレッドシートの内容
 
@@ -14,11 +14,11 @@ Sheets Popup Enhancer（以下「本拡張機能」）は、Google スプレッ�
 
 これらの処理はブラウザ内で行います。本拡張機能は、セル値、数式、編集履歴、コメントの内容を設定として保存せず、開発者のサーバーや第三者に送信・共有しません。
 
-差分メニューでコピーを選択した場合は、指定された変更前または変更後の値を端末のクリップボードに書き込みます。
+差分表示のメニューからコピーを選択した場合は、指定された変更前または変更後の値を端末のクリップボードに書き込みます。
 
 ### 設定の保存と削除
 
-本拡張機能は、コメントと編集履歴の初期幅、文字サイズ、差分表示の有効・無効、初期表示形式をブラウザの端末内ストレージに保存します。これらの設定は端末間で同期されません。
+本拡張機能は、コメントと編集履歴の初期幅、文字サイズ、差分表示の有効・無効、初期表示形式、Sheets Row Highlighterのハイライトとコメント・編集履歴の表示順を調整するかどうかをブラウザの端末内ストレージに保存します。これらの設定は端末間で同期されません。
 
 設定パネルの「リセット」で設定を初期値に戻せます。Chromeでは、本拡張機能を削除すると保存された設定も削除されます。
 
@@ -32,13 +32,13 @@ Sheets Popup Enhancer（以下「本拡張機能」）は、Google スプレッ�
 
 ### お問い合わせ
 
-プライバシーに関するお問い合わせは、[GitHub Issues](https://github.com/wintorse/sheets-popup-enhancer/issues)からお寄せください。セルの内容など、公開したくない情報は投稿しないでください。
+プライバシーに関するお問い合わせは、[GitHub Issues](https://github.com/wintorse/sheets-popup-enhancer/issues)からお寄せください。
 
 ## English
 
-Last updated: November 8, 2026
+Last updated: November 12, 2026
 
-Sheets Popup Enhancer (the “extension”) makes comments and cell edit history in Google Sheets easier to read. This policy explains how the extension handles data.
+This policy explains how Sheets Popup Enhancer (the “extension”) handles data.
 
 ### Spreadsheet content
 
@@ -46,11 +46,11 @@ The extension accesses displayed comments and cell edit history to adjust the po
 
 These operations take place in the browser. The extension does not save cell values, formulas, edit history, or comment content as settings, and it does not send or share them with the developer's servers or third parties.
 
-When you choose a copy action from the diff menu, the selected before or after value is written to your device's clipboard.
+When you choose a copy action from the diff view's menu, the selected before or after value is written to your device's clipboard.
 
 ### Settings and deletion
 
-The extension saves the default widths for comments and edit history, text size, whether the diff is enabled, and the initial layout in the browser's local storage. These settings are not synced between devices.
+The extension saves the default widths for comments and edit history, text size, whether the diff is enabled, the initial layout, and whether to adjust the display order of Sheets Row Highlighter's highlights and the comment and edit history popups in the browser's local storage. These settings are not synced between devices.
 
 You can restore the default settings using **Reset** in the settings panel. In Chrome, removing the extension also deletes its saved settings.
 
@@ -64,4 +64,4 @@ This policy will be updated if the extension's data practices change.
 
 ### Contact
 
-For privacy questions, please use [GitHub Issues](https://github.com/wintorse/sheets-popup-enhancer/issues). Do not post cell contents or other information you do not wish to make public.
+For privacy questions, please use [GitHub Issues](https://github.com/wintorse/sheets-popup-enhancer/issues).

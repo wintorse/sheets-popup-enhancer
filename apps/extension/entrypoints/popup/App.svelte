@@ -8,12 +8,13 @@
   let fontScale = $state(defaults.fontScale);
   let layout = $state<DiffLayout>(defaults.layout);
   let diffEnabled = $state(true);
+  let rowHighlighterCompatibility = $state(defaults.rowHighlighterCompatibility);
   let status = $state('');
   let ready = $state(false);
   let saving = false;
   let pending: Settings | undefined;
   function fill(value: typeof defaults) {
-    commentWidth = value.commentWidth; historyWidth = value.historyWidth; fontScale = value.fontScale; layout = value.layout; diffEnabled = value.diffEnabled;
+    commentWidth = value.commentWidth; historyWidth = value.historyWidth; fontScale = value.fontScale; layout = value.layout; diffEnabled = value.diffEnabled; rowHighlighterCompatibility = value.rowHighlighterCompatibility;
   }
   onMount(() => {
     let alive = true;
@@ -37,7 +38,7 @@
     saving = false;
   }
   function saveChange(change: Partial<Settings>) {
-    void save({ commentWidth, historyWidth, fontScale, layout, diffEnabled, ...change });
+    void save({ commentWidth, historyWidth, fontScale, layout, diffEnabled, rowHighlighterCompatibility, ...change });
   }
 </script>
 
@@ -64,7 +65,9 @@
           <span class="row-number" aria-hidden="true">8</span><label for="font-scale" dir="auto">{t.scale}</label>
           <div class="range-cell"><input id="font-scale" aria-label={`${t.fontSize} ${t.scale}`} type="range" min="80" max="120" step="10" bind:value={fontScale} oninput={(event) => saveChange({ fontScale: Number(event.currentTarget.value) })} aria-valuetext={`${fontScale}%`} style={`--fill: ${(fontScale - 80) / 40 * 100}%`}/></div><span class="value" aria-hidden="true">{fontScale} <small>%</small></span>
         </div>
-        <div class="sheet-row setting-row"><span class="row-number" aria-hidden="true">9</span><span class="reset-cell"><button type="button" class="reset" onclick={() => { fill(defaults); void save({ ...defaults }); }}>{t.reset}</button></span></div>
+        <div class="sheet-row section-row"><span class="row-number" aria-hidden="true">9</span><span class="section-title" dir="auto">{t.rowHighlighterOrder}</span></div>
+        <div class="sheet-row setting-row"><span class="row-number" aria-hidden="true">10</span><label for="row-highlighter" dir="auto">{t.rowHighlighterCompatibility}</label><label class="checkbox-cell"><input id="row-highlighter" type="checkbox" bind:checked={rowHighlighterCompatibility} onchange={(event) => saveChange({ rowHighlighterCompatibility: event.currentTarget.checked })}/></label><span aria-hidden="true"></span></div>
+        <div class="sheet-row setting-row"><span class="row-number" aria-hidden="true">11</span><span class="reset-cell"><button type="button" class="reset" onclick={() => { fill(defaults); void save({ ...defaults }); }}>{t.reset}</button></span></div>
       </div>
     </fieldset>
   </form>
