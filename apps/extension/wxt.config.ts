@@ -28,7 +28,7 @@ export default defineConfig({
     name: 'Sheets Popup Enhancer',
     default_locale: 'en',
     description: '__MSG_description__',
-    version: '1.0.0',
+    version: '1.1.0',
     permissions: ['storage'],
     icons,
     action: { default_icon: icons },
