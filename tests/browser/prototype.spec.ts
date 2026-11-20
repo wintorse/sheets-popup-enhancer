@@ -861,9 +861,9 @@ for (const kind of ['comment', 'history'] as const) {
       });
     await expect(host).toHaveAttribute('data-spe-grip-left', '');
 
-    await popup.evaluate((node) => (node.hidden = true));
+    await popup.evaluate((node) => node.setAttribute('hidden', ''));
     await expect(popup).toBeHidden();
-    await popup.evaluate((node) => (node.hidden = false));
+    await popup.evaluate((node) => node.removeAttribute('hidden'));
     await expect
       .poll(() => popup.boundingBox())
       .toMatchObject({ x: nativeLeft, width: shrunkWidth });
@@ -919,6 +919,16 @@ test('content script: manual comment and history widths last until the page relo
   await expect(comment).toHaveCSS('width', '510px');
   await expect(history).toHaveCSS('width', '540px');
   await page.evaluate(async () => {
+    const { chrome } = globalThis as unknown as {
+      chrome: {
+        storage: {
+          local: {
+            get: (key: string) => Promise<Record<string, unknown>>;
+            set: (data: Record<string, unknown>) => Promise<void>;
+          };
+        };
+      };
+    };
     const stored = await chrome.storage.local.get('spe.settings.v1');
     if (stored['spe.settings.v1'] !== undefined) throw new Error('Manual widths were persisted');
     await chrome.storage.local.set({ 'spe.settings.v1': { fontScale: 110 } });
@@ -2221,11 +2231,14 @@ test('content script: navigation keeps the native fallback until the stalled ren
   await openDiffFixture(page);
   await page.clock.install();
   const cssPath = '**/__extension__/content-scripts/sheets.css';
-  const cssReady = Promise.withResolvers<void>();
+  let releaseCss!: () => void;
+  const cssReady = new Promise<void>((resolve) => {
+    releaseCss = resolve;
+  });
   let requests = 0;
   await page.route(cssPath, async (route) => {
     requests++;
-    await cssReady.promise;
+    await cssReady;
     await route.fallback();
   });
 
@@ -2256,7 +2269,7 @@ test('content script: navigation keeps the native fallback until the stalled ren
     await expect(diff).toHaveCount(0);
     expect(requests).toBe(1);
   } finally {
-    cssReady.resolve();
+    releaseCss();
   }
   await expect(diff.locator('.after .value')).toHaveText('later');
   await expect(native).toBeHidden();
