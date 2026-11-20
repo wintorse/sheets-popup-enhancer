@@ -2,6 +2,9 @@ import { writable } from 'svelte/store';
 import { browser } from 'wxt/browser';
 import type { DiffLayout } from '@spe/diff-ui';
 
+export const MIN_POPUP_WIDTH = 280;
+export const MAX_POPUP_WIDTH = 1600;
+
 export interface Settings {
   commentWidth: number;
   historyWidth: number;
@@ -35,8 +38,18 @@ function normalizeNumber(
 export function normalizeSettings(value: unknown): Settings {
   const raw = value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
   return {
-    commentWidth: normalizeNumber(raw.commentWidth, defaults.commentWidth, 280, 1600),
-    historyWidth: normalizeNumber(raw.historyWidth, defaults.historyWidth, 280, 1600),
+    commentWidth: normalizeNumber(
+      raw.commentWidth,
+      defaults.commentWidth,
+      MIN_POPUP_WIDTH,
+      MAX_POPUP_WIDTH,
+    ),
+    historyWidth: normalizeNumber(
+      raw.historyWidth,
+      defaults.historyWidth,
+      MIN_POPUP_WIDTH,
+      MAX_POPUP_WIDTH,
+    ),
     fontScale: normalizeNumber(raw.fontScale, defaults.fontScale, 80, 120, 10),
     layout: raw.layout === 'unified' || raw.layout === 'vertical' ? 'unified' : defaults.layout,
     diffEnabled: typeof raw.diffEnabled === 'boolean' ? raw.diffEnabled : defaults.diffEnabled,

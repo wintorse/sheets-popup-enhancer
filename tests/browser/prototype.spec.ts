@@ -264,7 +264,7 @@ test('content script: enhance, update, fall back, toggle and reinitialize withou
   await expect(page.locator('spe-history-diff table')).toHaveClass(/split/);
   const history = page.locator('.waffle-blameview');
   const rect = await history.boundingBox();
-  expect(rect!.x + rect!.width).toBeLessThanOrEqual(1428);
+  expect(rect!.x + rect!.width).toBeLessThanOrEqual(page.viewportSize()!.width);
   const comment = page.locator('.docos-anchoreddocoview');
   // A popup that does not overflow must not reserve an empty scrollbar column.
   for (const popup of [history, comment]) {
@@ -310,7 +310,7 @@ test('content script: enhance, update, fall back, toggle and reinitialize withou
       });
   });
   await history.focus();
-  await dragHandle(page, gripHost(history).locator('[data-resize-handle]'), 10);
+  await dragHandle(page, gripHost(history).locator('[data-resize-handle]'), -10);
   await expect(history).toHaveCSS('width', '630px');
   await expect(history).toBeFocused();
   await page.keyboard.press('ArrowRight');
@@ -379,7 +379,7 @@ test('content script: enhance, update, fall back, toggle and reinitialize withou
   });
   await expect(page.locator('spe-history-diff')).toHaveCount(0);
   await expect(page.locator('.docs-blameview-value-content')).toBeVisible();
-  await expect(history).toHaveCSS('width', '700px');
+  await expect(history).toHaveCSS('width', '630px');
   // Loading a new content-script instance invalidates the previous instance and restores its styles.
   await page.addScriptTag({ path: script });
   await expect(page.locator('spe-resize-grip')).toHaveCount(2);
@@ -747,7 +747,7 @@ for (const [previous, current] of [
   });
 }
 
-async function expectReachableGrip(page: Page, popup: Locator) {
+async function expectReachableGrip(page: Page, popup: Locator, horizontalMargin = 0) {
   const grip = gripHost(popup).locator('[data-resize-handle]');
   await expect(grip).toBeVisible();
   await expect(grip).toBeInViewport({ ratio: 1 });
@@ -766,9 +766,9 @@ async function expectReachableGrip(page: Page, popup: Locator) {
       const rect = await popup.boundingBox();
       return (
         !!rect &&
-        rect.x >= 11.5 &&
+        rect.x >= horizontalMargin - 0.5 &&
         rect.y >= 144.5 &&
-        rect.x + rect.width <= viewport.width - 11.5 &&
+        rect.x + rect.width <= viewport.width - horizontalMargin + 0.5 &&
         rect.y + rect.height <= viewport.height - 36 - 13.5
       );
     })
@@ -787,6 +787,167 @@ async function expectReachableGrip(page: Page, popup: Locator) {
     )
     .toBe(true);
 }
+
+for (const kind of ['comment', 'history'] as const) {
+  test(`content script: ${kind} grows right first and uses a left grip at the window edge`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1000, height: 800 });
+    await mockExtension(page);
+    const selector = kind === 'comment' ? '.docos-anchoreddocoview' : '.waffle-blameview';
+    const width = kind === 'comment' ? 440 : 620;
+    await page.route('**/fixtures/right-first-popup', (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        // Synthetic native popup, independent of cell selection and pointer location.
+        body: `<!doctype html><div id="waffle-grid-container" style="position:fixed;inset:0">
+          <div class="${selector.slice(1)}" style="position:absolute;left:80px;top:250px;width:282px;height:160px;background:white">Popup</div>
+        </div>`,
+      }),
+    );
+    await page.goto('/fixtures/right-first-popup');
+    await page.addScriptTag({ path: extensionOutput('content-scripts/sheets.js') });
+    const popup = page.locator(selector);
+    const host = gripHost(popup);
+    await expect(popup).toHaveCSS('width', `${width}px`);
+    await expect.poll(() => popup.boundingBox()).toMatchObject({ x: 80, y: 250 });
+    await expect(host).not.toHaveAttribute('data-spe-grip-left', '');
+
+    await page.mouse.move(10, 200);
+    await popup.click({ position: { x: 30, y: 30 } });
+    await page.mouse.move(900, 700);
+    await popup.evaluate((node) => node.classList.add('docos-docoview-active'));
+    await expect.poll(() => popup.boundingBox()).toMatchObject({ x: 80, width });
+    await expect(host).not.toHaveAttribute('data-spe-grip-left', '');
+
+    await popup.evaluate((node) => {
+      node.style.left = '800px';
+    });
+    await expect.poll(() => popup.boundingBox()).toMatchObject({ x: 1000 - width, width });
+    await expect(host).toHaveAttribute('data-spe-grip-left', '');
+    await expectReachableGrip(page, popup);
+    await dragHandle(page, host.locator('[data-resize-handle]'), -80);
+    await expect(popup).toHaveCSS('width', `${width + 80}px`);
+    await expect.poll(() => popup.boundingBox()).toMatchObject({ x: 920 - width });
+
+    await popup.evaluate((node) => {
+      node.style.left = '40px';
+      node.style.width = '300px';
+    });
+    await expect.poll(() => popup.boundingBox()).toMatchObject({ x: 40, width: width + 80 });
+    await expect(host).not.toHaveAttribute('data-spe-grip-left', '');
+
+    await page.setViewportSize({ width: 400, height: 800 });
+    await expect(popup).toHaveCSS('width', '400px');
+    await expect.poll(() => popup.boundingBox()).toMatchObject({ x: 0 });
+    await expect(host).toHaveAttribute('data-spe-grip-left', '');
+    await page.setViewportSize({ width: 1000, height: 800 });
+    await expect(popup).toHaveCSS('width', `${width + 80}px`);
+
+    // Shrink enough to fit at the native left position. Releasing a left grip
+    // must still leave the open popup against the right edge.
+    const nativeLeft = 1000 - width + 20;
+    await popup.evaluate((node, left) => {
+      node.style.left = `${left}px`;
+    }, nativeLeft);
+    await expect(host).toHaveAttribute('data-spe-grip-left', '');
+    await dragHandle(page, host.locator('[data-resize-handle]'), 120);
+    const shrunkWidth = width - 40;
+    await expect
+      .poll(() => popup.boundingBox())
+      .toMatchObject({
+        x: 1000 - shrunkWidth,
+        width: shrunkWidth,
+      });
+    await expect(host).toHaveAttribute('data-spe-grip-left', '');
+
+    await popup.evaluate((node) => node.setAttribute('hidden', ''));
+    await expect(popup).toBeHidden();
+    await popup.evaluate((node) => node.removeAttribute('hidden'));
+    await expect
+      .poll(() => popup.boundingBox())
+      .toMatchObject({ x: nativeLeft, width: shrunkWidth });
+    await expect(host).not.toHaveAttribute('data-spe-grip-left', '');
+  });
+}
+
+test('content script: manual comment and history widths last until the page reloads', async ({
+  page,
+}) => {
+  await mockExtension(page);
+  await page.route('**/fixtures/page-widths', (route) =>
+    route.fulfill({
+      contentType: 'text/html',
+      // Synthetic popups can be replaced just as Sheets reuses or creates views.
+      body: `<!doctype html><div class="docos-anchoreddocoview" style="position:absolute;left:40px;top:200px;width:282px;height:160px;background:white">Comment</div>
+        <div class="waffle-blameview" style="position:absolute;left:40px;top:500px;width:320px;height:160px;background:white">History</div>`,
+    }),
+  );
+  const script = extensionOutput('content-scripts/sheets.js');
+  await page.goto('/fixtures/page-widths');
+  await page.addScriptTag({ path: script });
+  const comment = page.locator('.docos-anchoreddocoview');
+  const history = page.locator('.waffle-blameview');
+  await expect(comment).toHaveCSS('width', '440px');
+  await expect(history).toHaveCSS('width', '620px');
+  await dragHandle(page, gripHost(comment).locator('[data-resize-handle]'), 70);
+  await expect(comment).toHaveCSS('width', '510px');
+  await expect(history).toHaveCSS('width', '620px');
+  await dragHandle(page, gripHost(history).locator('[data-resize-handle]'), -80);
+  await expect(history).toHaveCSS('width', '540px');
+
+  await page.locator('[data-spe-popup]').evaluateAll((popups) => {
+    for (const popup of popups) {
+      const fresh = document.createElement('div');
+      fresh.className = popup.className;
+      fresh.style.cssText =
+        'position:absolute;left:50px;top:220px;width:282px;height:120px;background:white';
+      fresh.textContent = popup.textContent;
+      popup.replaceWith(fresh);
+    }
+  });
+  await expect(comment).toHaveCSS('width', '510px');
+  await expect(history).toHaveCSS('width', '540px');
+  await page.locator('[data-spe-popup]').evaluateAll((popups) => {
+    for (const popup of popups) (popup as HTMLElement).style.display = 'none';
+  });
+  await expect(comment).toBeHidden();
+  await expect(history).toBeHidden();
+  await page.locator('[data-spe-popup]').evaluateAll((popups) => {
+    for (const popup of popups) (popup as HTMLElement).style.display = '';
+  });
+  await expect(comment).toHaveCSS('width', '510px');
+  await expect(history).toHaveCSS('width', '540px');
+  await page.evaluate(async () => {
+    const { chrome } = globalThis as unknown as {
+      chrome: {
+        storage: {
+          local: {
+            get: (key: string) => Promise<Record<string, unknown>>;
+            set: (data: Record<string, unknown>) => Promise<void>;
+          };
+        };
+      };
+    };
+    const stored = await chrome.storage.local.get('spe.settings.v1');
+    if (stored['spe.settings.v1'] !== undefined) throw new Error('Manual widths were persisted');
+    await chrome.storage.local.set({ 'spe.settings.v1': { fontScale: 110 } });
+  });
+  await expect(comment).toHaveCSS('width', '510px');
+  await expect(history).toHaveCSS('width', '540px');
+
+  await page.setViewportSize({ width: 400, height: 800 });
+  await expect(comment).toHaveCSS('width', '400px');
+  await expect(history).toHaveCSS('width', '400px');
+  await page.setViewportSize({ width: 1440, height: 1080 });
+  await expect(comment).toHaveCSS('width', '510px');
+  await expect(history).toHaveCSS('width', '540px');
+
+  await page.reload();
+  await page.addScriptTag({ path: script });
+  await expect(comment).toHaveCSS('width', '440px');
+  await expect(history).toHaveCSS('width', '620px');
+});
 
 test('content script: comment grip stays above a popup with its own stacking order', async ({
   page,
@@ -818,7 +979,8 @@ test('content script: comment grip stays above a popup with its own stacking ord
     const popup = element as HTMLElement;
     const overlay = document.createElement('div');
     overlay.className = 'higher-overlay';
-    overlay.style.cssText = `position:absolute;left:${popup.style.left};top:${popup.style.top};width:${popup.style.width};height:160px;z-index:2001;background:white`;
+    const { width, height, left, top } = getComputedStyle(popup);
+    overlay.style.cssText = `position:absolute;left:${left};top:${top};width:${width};height:${height};z-index:2001;background:white`;
     popup.parentElement!.append(overlay);
   });
   const overlay = page.locator('.higher-overlay');
@@ -877,7 +1039,7 @@ for (const kind of ['history', 'comment'] as const) {
     await expectReachableGrip(page, popup);
     expect((await grip.boundingBox())!.y).toBeCloseTo(beforeScroll!.y, 0);
     const oldWidth = (await popup.boundingBox())!.width;
-    await dragHandle(page, grip, -60);
+    await dragHandle(page, grip, 60);
     await expect(popup).toHaveCSS('width', `${oldWidth - 60}px`);
     await expectReachableGrip(page, popup);
     await page.setViewportSize({ width: 360, height: 220 });
@@ -2069,11 +2231,14 @@ test('content script: navigation keeps the native fallback until the stalled ren
   await openDiffFixture(page);
   await page.clock.install();
   const cssPath = '**/__extension__/content-scripts/sheets.css';
-  const cssReady = Promise.withResolvers<void>();
+  let releaseCss!: () => void;
+  const cssReady = new Promise<void>((resolve) => {
+    releaseCss = resolve;
+  });
   let requests = 0;
   await page.route(cssPath, async (route) => {
     requests++;
-    await cssReady.promise;
+    await cssReady;
     await route.fallback();
   });
 
@@ -2104,7 +2269,7 @@ test('content script: navigation keeps the native fallback until the stalled ren
     await expect(diff).toHaveCount(0);
     expect(requests).toBe(1);
   } finally {
-    cssReady.resolve();
+    releaseCss();
   }
   await expect(diff.locator('.after .value')).toHaveText('later');
   await expect(native).toBeHidden();

@@ -1,9 +1,16 @@
 [data-spe-popup] {
+  overflow: auto !important;
+  overscroll-behavior: contain;
+}
+[data-spe-layout] {
   box-sizing: border-box !important;
   min-width: 0 !important;
   max-width: none !important;
-  overflow: auto !important;
-  overscroll-behavior: contain;
+  width: var(--spe-width) !important;
+}
+[data-spe-layout='positioned'] {
+  left: var(--spe-left) !important;
+  top: var(--spe-top) !important;
 }
 /* Opacity also hides descendants that explicitly override inherited visibility. */
 [data-spe-popup][data-spe-sheet-scrolling] {
