@@ -1,12 +1,12 @@
 # Chrome Web Store Listing — Sheets Popup Enhancer
 
-- Last Updated: 2026-11-13
+- Last Updated: 2026-11-20
 
 ## Store Listing
 
 - Extension Name: Sheets Popup Enhancer
 - Short Description: Google スプレッドシートのコメントとセルの編集履歴の幅を広げ、セルの編集履歴をGitHub風に表示します。
-- Detailed Description: Google スプレッドシートのコメントとセルの編集履歴を、読みやすい幅に調整できます。対応する編集履歴では、変更前と変更後の値を比較し、変更した箇所を強調します。差分の表示形式はUnified・Splitに切り替えられ、変更前後の値をそれぞれコピーできます。長文は色分けや行番号を付けずに表示します。デフォルトの幅・文字サイズ・表示形式は設定から変更でき、設定は端末に保存されます。Sheets Row Highlighterと併用する場合は、コメントと編集履歴をハイライトより手前に表示します。この表示順の調整は設定で無効にできます。
+- Detailed Description: Google スプレッドシートのコメントとセルの編集履歴を、読みやすい幅に調整できます。幅は右へ広がり、画面右端に収まらない分を左へ広げます。ハンドルで変更した幅は、コメントと編集履歴ごとにページの再読み込みまで保持します。対応する編集履歴では、変更前と変更後の値を比較し、変更した箇所を強調します。差分の表示形式はUnified・Splitに切り替えられ、変更前後の値をそれぞれコピーできます。長文は色分けや行番号を付けずに表示します。デフォルトの幅・文字サイズ・表示形式は設定から変更でき、設定は端末に保存されます。Sheets Row Highlighterと併用する場合は、コメントと編集履歴をハイライトより手前に表示します。この表示順の調整は設定で無効にできます。
 - Category: Productivity
 - Single Purpose: Google スプレッドシートのコメントとセル編集履歴を読みやすく表示する。
 - Primary Language: Japanese
@@ -33,6 +33,7 @@
 
 ## Version History
 
+- 次回リリース: コメントと編集履歴の幅は右へ広げ、画面右端に収まらない分を左へ広げます。右端に達した場合は左下にハンドルを表示します。手動変更した幅は、コメントと編集履歴それぞれでページの再読み込みまで保持します。
 - 1.1.0: Sheets Row Highlighterのハイライトより手前にコメントと編集履歴を表示する設定を追加しました。初期状態はONで、設定画面からON/OFFできます。
 
 ## Screenshot Updates
