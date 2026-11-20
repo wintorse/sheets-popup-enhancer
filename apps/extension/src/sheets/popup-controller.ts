@@ -13,7 +13,13 @@ const NAVIGATION_TIMEOUT = 250;
 const RENDER_TIMEOUT = 1500;
 const SHEET_SCROLL_SETTLE = 200;
 
-import { clampPopup, setStyle, restoreProperty, syncGripPosition } from './popup-layout';
+import {
+  GRIP_SIZE,
+  layoutPopup,
+  restoreProperty,
+  setStyle,
+  syncGripPosition,
+} from './popup-layout';
 import type { Ui, PopupState } from './popup-state';
 import {
   mutationElement,
@@ -34,6 +40,7 @@ export class PopupController {
   private popups = new Map<HTMLElement, PopupState>();
   private sheetScrollTimer: ReturnType<typeof setTimeout> | undefined;
   private sheetScrollFrame = 0;
+  private pageWidths: { comment?: number; history?: number } = {};
   private running = true;
   private frame = 0;
   private queue = new Set<HTMLElement>();
@@ -48,11 +55,12 @@ export class PopupController {
     for (const mutation of mutations) this.handleMutation(mutation);
   });
 
-  private resetScrollWithin(root: Node, connectedOnly = false) {
-    for (const popup of this.popups.keys()) {
-      if (!this.isHistory(popup)) continue;
+  private resetWithin(root: Node, connectedOnly = false) {
+    for (const [popup, state] of this.popups) {
       if (connectedOnly && !popup.isConnected) continue;
-      if (root === popup || root.contains(popup)) this.resetHistoryScroll(popup);
+      if (root !== popup && !root.contains(popup)) continue;
+      state.pinnedRightAt = undefined;
+      if (this.isHistory(popup)) this.resetHistoryScroll(popup);
     }
   }
 
@@ -73,7 +81,7 @@ export class PopupController {
     }
     if (mutation.removedNodes.length) {
       // A popup may be detached and reinserted before the next animation frame.
-      for (const removed of mutation.removedNodes) this.resetScrollWithin(removed, true);
+      for (const removed of mutation.removedNodes) this.resetWithin(removed, true);
       this.schedule();
       this.collect(mutation.target);
     }
@@ -83,8 +91,7 @@ export class PopupController {
 
   private handleMutation(mutation: MutationRecord) {
     const target = mutationElement(mutation);
-    if (target instanceof HTMLElement && popupReopened(mutation, target))
-      this.resetScrollWithin(target);
+    if (target instanceof HTMLElement && popupReopened(mutation, target)) this.resetWithin(target);
     if (mutation.type === 'childList' || mutation.type === 'characterData') {
       this.hideChangedNativeValue(target);
     }
@@ -161,14 +168,32 @@ export class PopupController {
     delete document.documentElement.dataset.speDiffEnabled;
   }
   private clamp(element: HTMLElement) {
-    clampPopup(element, this.popups.get(element)?.desiredWidth);
-    syncGripPosition(element, this.popups.get(element));
+    const state = this.popups.get(element);
+    if (!state) return;
+    layoutPopup(element, state);
+    syncGripPosition(element, state);
   }
   private isHistory(element: HTMLElement) {
     return element.matches('.waffle-blameview');
   }
   private defaultWidth(element: HTMLElement) {
-    return this.isHistory(element) ? get(settings).historyWidth : get(settings).commentWidth;
+    if (this.isHistory(element)) return this.pageWidths.history ?? get(settings).historyWidth;
+    return this.pageWidths.comment ?? get(settings).commentWidth;
+  }
+  private commitWidth(element: HTMLElement, state: PopupState) {
+    const width = element.getBoundingClientRect().width;
+    const edge = state.resizeEdge;
+    state.resizeEdge = undefined;
+    if (edge && width !== edge.width) {
+      state.pinnedRightAt = edge.leftGrip ? edge.nativeLeft : undefined;
+      if (this.isHistory(element)) this.pageWidths.history = width;
+      else this.pageWidths.comment = width;
+      for (const [popup, popupState] of this.popups) {
+        popupState.desiredWidth = this.defaultWidth(popup);
+        this.schedule(popup);
+      }
+    }
+    this.clamp(element);
   }
   private sheetScrolling() {
     if (!this.running) return;
@@ -387,16 +412,26 @@ export class PopupController {
         position: 'inline',
         anchor: element,
         append: 'after',
-        css: ':host { position: absolute !important; display: block !important; width: 24px !important; height: var(--spe-grip-height, 24px) !important; left: var(--spe-grip-left, 0px) !important; top: var(--spe-grip-top, 0px) !important; visibility: var(--spe-grip-visibility, hidden) !important; opacity: var(--spe-grip-opacity, 0) !important; z-index: var(--spe-grip-z-index, 10) !important; } :host([data-spe-grip-hidden]) * { visibility: hidden !important; }',
+        css: `:host { position: absolute !important; display: block !important; width: ${GRIP_SIZE}px !important; height: var(--spe-grip-height, ${GRIP_SIZE}px) !important; left: var(--spe-grip-left, 0px) !important; top: var(--spe-grip-top, 0px) !important; visibility: var(--spe-grip-visibility, hidden) !important; opacity: var(--spe-grip-opacity, 0) !important; z-index: var(--spe-grip-z-index, 10) !important; } :host([data-spe-grip-hidden]) * { visibility: hidden !important; } :host([data-spe-grip-left]) svg { transform: scaleX(-1); }`,
         onMount: (container) => {
           container.style.height = '100%';
           return mount(ResizeGrip, {
             target: container,
             props: {
               target: element,
-              onresize: () => {
-                state.desiredWidth = element.getBoundingClientRect().width;
+              setWidth: (width) => {
+                state.desiredWidth = width;
                 this.clamp(element);
+              },
+              oncommit: () => this.commitWidth(element, state),
+              direction: () => {
+                const rect = element.getBoundingClientRect();
+                state.resizeEdge = {
+                  leftGrip: state.leftGrip,
+                  position: state.leftGrip ? rect.right : rect.left,
+                  width: rect.width,
+                };
+                return state.leftGrip ? -1 : 1;
               },
             },
           });
@@ -420,17 +455,12 @@ export class PopupController {
   }
   private registerPopup(element: HTMLElement): PopupState {
     const state: PopupState = {
-      width: element.style.width,
-      priority: element.style.getPropertyPriority('width'),
-      left: element.style.left,
-      leftPriority: element.style.getPropertyPriority('left'),
-      top: element.style.top,
-      topPriority: element.style.getPropertyPriority('top'),
       maxHeight: element.style.maxHeight,
       maxHeightPriority: element.style.getPropertyPriority('max-height'),
       minHeight: element.style.minHeight,
       minHeightPriority: element.style.getPropertyPriority('min-height'),
       desiredWidth: this.defaultWidth(element),
+      leftGrip: false,
       pending: false,
       visible: false,
       disposed: false,
@@ -501,10 +531,13 @@ export class PopupController {
     const visible = rect.width > 0 && rect.height > 0;
     if (visible && !state.visible) {
       state.desiredWidth = this.defaultWidth(element);
+      state.resizeEdge = undefined;
       this.resetHistoryScroll(element);
     }
     state.visible = visible;
     if (!visible) {
+      state.resizeEdge = undefined;
+      state.pinnedRightAt = undefined;
       state.pendingNavigation = undefined;
       this.finishNavigation(element, state);
     }
@@ -577,11 +610,12 @@ export class PopupController {
     for (const value of state.values.keys()) this.deleteValue(value, state);
     for (const value of element.querySelectorAll<HTMLElement>('[data-spe-native-visible]'))
       delete value.dataset.speNativeVisible;
-    restoreProperty(element, 'width', state.width, state.priority);
-    restoreProperty(element, 'left', state.left, state.leftPriority);
-    restoreProperty(element, 'top', state.top, state.topPriority);
     restoreProperty(element, 'max-height', state.maxHeight, state.maxHeightPriority);
     restoreProperty(element, 'min-height', state.minHeight, state.minHeightPriority);
+    element.style.removeProperty('--spe-width');
+    element.style.removeProperty('--spe-left');
+    element.style.removeProperty('--spe-top');
+    delete element.dataset.speLayout;
     delete element.dataset.spePopup;
     delete element.dataset.speSheetScrolling;
   }
