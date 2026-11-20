@@ -14,7 +14,7 @@ export interface Settings {
   rowHighlighterCompatibility: boolean;
 }
 export const defaults: Settings = {
-  commentWidth: 440,
+  commentWidth: 400,
   historyWidth: 620,
   fontScale: 100,
   layout: 'split',
