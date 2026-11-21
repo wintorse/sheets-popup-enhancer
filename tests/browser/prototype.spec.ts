@@ -2132,10 +2132,7 @@ test('content script: a stalled diff render restores native history', async ({ p
   await page.route('**/__extension__/content-scripts/sheets.css', async (route) => {
     requests++;
     if (requests <= 2) await new Promise((resolve) => setTimeout(resolve, 2200));
-    await route.fulfill({
-      body: await readFile(resolve('apps/extension/.output/chrome-mv3/content-scripts/sheets.css')),
-      contentType: 'text/css',
-    });
+    await route.fallback();
   });
   await page.route('**/fixtures/stalled-render', (route) =>
     route.fulfill({
