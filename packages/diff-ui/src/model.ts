@@ -5,17 +5,17 @@ export interface Token {
   text: string;
   changed: boolean;
 }
-export interface DiffLine {
+interface DiffLine {
   number: number | null;
   tokens: Token[];
   changed: boolean;
 }
-export interface DiffModel {
+interface DiffModel {
   before: DiffLine[];
   after: DiffLine[];
   simplified: boolean;
 }
-export interface SplitRow {
+interface SplitRow {
   before: DiffLine | null;
   after: DiffLine | null;
 }

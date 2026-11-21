@@ -4,7 +4,7 @@ import { parsePartialHistory } from './history-partial';
 import { parseFullHistory } from './history-full';
 import type { HistoryContext, ParseResult } from './history-types';
 
-export type { CellChange, ParseResult } from './history-types';
+export type { CellChange } from './history-types';
 export { readFormulaBar, unwrapValue } from './history-dom';
 export { isPartialHistory } from './history-partial';
 

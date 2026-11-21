@@ -1,5 +1,5 @@
 export type Ui = { mount: () => void; remove: () => void; shadowHost: HTMLElement };
-export type ValueState = {
+type ValueState = {
   signature: string;
   display: string;
   priority: string;
