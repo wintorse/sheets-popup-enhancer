@@ -26,6 +26,55 @@ function extensionContentType(asset: string): string {
   return 'application/javascript';
 }
 
+function installMockExtension() {
+  Object.defineProperty(navigator, 'language', { configurable: true, value: 'ja' });
+  const listeners = new Set<(changes: unknown, area: string) => void>();
+  let data: Record<string, unknown> = {};
+  const storage = {
+    async get() {
+      return data;
+    },
+    async set(value: Record<string, unknown>) {
+      const previous = data;
+      data = { ...data, ...value };
+      for (const listener of listeners)
+        listener(
+          Object.fromEntries(
+            Object.entries(value).map(([key, newValue]) => [
+              key,
+              { oldValue: previous[key], newValue },
+            ]),
+          ),
+          'local',
+        );
+    },
+  };
+  const runtime: { id?: string; getURL: (path: string) => string } = {
+    id: 'prototype-test',
+    getURL: (path: string) => `${location.origin}/__extension__/${path.replace(/^\//, '')}`,
+  };
+  const extensionApi = {
+    runtime,
+    storage: {
+      local: storage,
+      onChanged: {
+        addListener: (listener: (changes: unknown, area: string) => void) =>
+          listeners.add(listener),
+        removeListener: (listener: (changes: unknown, area: string) => void) =>
+          listeners.delete(listener),
+      },
+    },
+  };
+  Object.defineProperty(globalThis, 'chrome', { configurable: true, value: extensionApi });
+  Object.defineProperty(globalThis, 'browser', { configurable: true, value: extensionApi });
+  return extensionApi;
+}
+
+// Browser-side callbacks use the same API shape that Playwright installs.
+declare global {
+  var chrome: ReturnType<typeof installMockExtension>;
+}
+
 async function mockExtension(page: Page) {
   await page.route('**/__extension__/**', async (route) => {
     const asset = new URL(route.request().url()).pathname.split('/__extension__/')[1];
@@ -36,47 +85,11 @@ async function mockExtension(page: Page) {
       : await readFile(file);
     await route.fulfill({ body, contentType: extensionContentType(asset) });
   });
-  await page.addInitScript(() => {
-    Object.defineProperty(navigator, 'language', { configurable: true, value: 'ja' });
-    const listeners = new Set<(changes: unknown, area: string) => void>();
-    let data: Record<string, unknown> = {};
-    const storage = {
-      async get() {
-        return data;
-      },
-      async set(value: Record<string, unknown>) {
-        const previous = data;
-        data = { ...data, ...value };
-        for (const listener of listeners)
-          listener(
-            Object.fromEntries(
-              Object.entries(value).map(([key, newValue]) => [
-                key,
-                { oldValue: previous[key], newValue },
-              ]),
-            ),
-            'local',
-          );
-      },
-    };
-    const extensionApi = {
-      runtime: {
-        id: 'prototype-test',
-        getURL: (path: string) => `${location.origin}/__extension__/${path.replace(/^\//, '')}`,
-      },
-      storage: {
-        local: storage,
-        onChanged: {
-          addListener: (listener: (changes: unknown, area: string) => void) =>
-            listeners.add(listener),
-          removeListener: (listener: (changes: unknown, area: string) => void) =>
-            listeners.delete(listener),
-        },
-      },
-    };
-    Object.defineProperty(globalThis, 'chrome', { configurable: true, value: extensionApi });
-    Object.defineProperty(globalThis, 'browser', { configurable: true, value: extensionApi });
-  });
+  await page.addInitScript(installMockExtension);
+}
+
+function readStoredSettings(page: Page) {
+  return page.evaluate(async () => (await chrome.storage.local.get())['spe.settings.v1']);
 }
 
 // These fixtures emulate Sheets markup and exercise the bundled content script.
@@ -351,23 +364,8 @@ test('content script: enhance, update, fall back, toggle and reinitialize withou
   await layoutTrigger.click();
   await expect(page.getByRole('button', { name: 'Split', exact: true })).toBeDisabled();
   await page.getByRole('button', { name: 'Unified', exact: true }).click();
-  const savedLayout = await page.evaluate(async () => {
-    const chrome = (
-      globalThis as unknown as {
-        chrome: {
-          storage: { local: { get: (key: string) => Promise<Record<string, { layout: string }>> } };
-        };
-      }
-    ).chrome;
-    return (await chrome.storage.local.get('spe.settings.v1'))['spe.settings.v1'].layout;
-  });
-  expect(savedLayout).toBe('split');
+  expect(await readStoredSettings(page)).toMatchObject({ layout: 'split' });
   await page.evaluate(async () => {
-    const chrome = (
-      globalThis as unknown as {
-        chrome: { storage: { local: { set: (data: unknown) => Promise<void> } } };
-      }
-    ).chrome;
     await chrome.storage.local.set({
       'spe.settings.v1': {
         diffEnabled: false,
@@ -407,11 +405,6 @@ test('content script: text scale updates comments and both history views', async
   await expect(diff).toHaveCSS('font-size', '12px');
   await expect(comment).toHaveCSS('zoom', '1');
   await page.evaluate(async () => {
-    const chrome = (
-      globalThis as unknown as {
-        chrome: { storage: { local: { set: (data: unknown) => Promise<void> } } };
-      }
-    ).chrome;
     await chrome.storage.local.set({ 'spe.settings.v1': { fontScale: 200 } });
   });
   await expect
@@ -431,11 +424,6 @@ test('content script: text scale updates comments and both history views', async
     'A reply\nwith multiple lines',
   );
   await page.evaluate(async () => {
-    const chrome = (
-      globalThis as unknown as {
-        chrome: { storage: { local: { set: (data: unknown) => Promise<void> } } };
-      }
-    ).chrome;
     await chrome.storage.local.set({ 'spe.settings.v1': { fontScale: 80, diffEnabled: false } });
   });
   await expect(native).toBeVisible();
@@ -531,26 +519,7 @@ test('extension settings: save and restore local settings', async ({ page }) => 
   await page.getByLabel('初期表示').selectOption('unified');
   await page.getByRole('checkbox', { name: '有効にする' }).uncheck();
   await expect
-    .poll(() =>
-      page.evaluate(async () => {
-        const chrome = (
-          globalThis as unknown as {
-            chrome: {
-              storage: {
-                local: {
-                  get: (
-                    key: string,
-                  ) => Promise<
-                    Record<string, { layout: string; commentWidth: number; diffEnabled: boolean }>
-                  >;
-                };
-              };
-            };
-          }
-        ).chrome;
-        return (await chrome.storage.local.get('spe.settings.v1'))['spe.settings.v1'];
-      }),
-    )
+    .poll(() => readStoredSettings(page))
     .toMatchObject({
       layout: 'unified',
       commentWidth: Number(changedWidth),
@@ -564,24 +533,7 @@ test('extension settings: save and restore local settings', async ({ page }) => 
   await expect(page.getByRole('checkbox', { name: '有効にする' })).toBeChecked();
   await expect(compatibility).toBeChecked();
   await expect
-    .poll(() =>
-      page.evaluate(async () => {
-        const chrome = (
-          globalThis as unknown as {
-            chrome: {
-              storage: {
-                local: {
-                  get: (
-                    key: string,
-                  ) => Promise<Record<string, { layout: string; commentWidth: number }>>;
-                };
-              };
-            };
-          }
-        ).chrome;
-        return (await chrome.storage.local.get('spe.settings.v1'))['spe.settings.v1'];
-      }),
-    )
+    .poll(() => readStoredSettings(page))
     .toMatchObject({
       layout: 'split',
       commentWidth: 400,
@@ -619,12 +571,7 @@ test('content script: Row Highlighter compatibility keeps native popups above hi
 
   async function setCompatibility(enabled: boolean) {
     await page.evaluate(async (rowHighlighterCompatibility) => {
-      const api = (
-        globalThis as unknown as {
-          chrome: { storage: { local: { set: (value: unknown) => Promise<void> } } };
-        }
-      ).chrome;
-      await api.storage.local.set({ 'spe.settings.v1': { rowHighlighterCompatibility } });
+      await chrome.storage.local.set({ 'spe.settings.v1': { rowHighlighterCompatibility } });
     }, enabled);
   }
   async function topElementIsPopup(popup: Locator) {
@@ -735,11 +682,6 @@ for (const [previous, current] of [
   test(`extension settings: restores ${previous} as ${current}`, async ({ page }) => {
     await mockExtension(page);
     await page.addInitScript((layout) => {
-      const chrome = (
-        globalThis as unknown as {
-          chrome: { storage: { local: { set: (data: unknown) => Promise<void> } } };
-        }
-      ).chrome;
       void chrome.storage.local.set({ 'spe.settings.v1': { layout } });
     }, previous);
     await page.goto('/__extension__/popup.html');
@@ -920,17 +862,7 @@ test('content script: manual comment and history widths last until the page relo
   await expect(comment).toHaveCSS('width', '470px');
   await expect(history).toHaveCSS('width', '540px');
   await page.evaluate(async () => {
-    const { chrome } = globalThis as unknown as {
-      chrome: {
-        storage: {
-          local: {
-            get: (key: string) => Promise<Record<string, unknown>>;
-            set: (data: Record<string, unknown>) => Promise<void>;
-          };
-        };
-      };
-    };
-    const stored = await chrome.storage.local.get('spe.settings.v1');
+    const stored = await chrome.storage.local.get();
     if (stored['spe.settings.v1'] !== undefined) throw new Error('Manual widths were persisted');
     await chrome.storage.local.set({ 'spe.settings.v1': { fontScale: 110 } });
   });
@@ -1061,7 +993,7 @@ for (const kind of ['history', 'comment'] as const) {
     expect(styleChanges).toBeLessThanOrEqual(1);
     // Invalidating the extension restores native min/max height declarations and priorities.
     await page.evaluate(() => {
-      delete (globalThis as unknown as { chrome: { runtime: { id?: string } } }).chrome.runtime.id;
+      delete chrome.runtime.id;
       window.dispatchEvent(new Event('resize'));
     });
     await expect(page.locator('spe-resize-grip')).toHaveCount(0);
@@ -2181,11 +2113,6 @@ test('content script: native values start hidden and unsupported content is rest
   await expect(native).toBeHidden();
 
   await page.evaluate(async () => {
-    const chrome = (
-      globalThis as unknown as {
-        chrome: { storage: { local: { set: (data: unknown) => Promise<void> } } };
-      }
-    ).chrome;
     await chrome.storage.local.set({ 'spe.settings.v1': { diffEnabled: false } });
   });
   await expect(diff).toHaveCount(0);
