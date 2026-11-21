@@ -1,7 +1,7 @@
-export const bold = (node: Node): node is HTMLElement =>
-  node.nodeType === 1 && (node as Element).classList.contains('docs-blame-bold-text');
+export const bold = (node: Node): node is Element =>
+  node instanceof Element && node.classList.contains('docs-blame-bold-text');
 export const formula = (node: Node) =>
-  node.nodeType === 1 && (node as Element).classList.contains('waffle-blameview-formula-text');
+  node instanceof Element && node.classList.contains('waffle-blameview-formula-text');
 const quotePairs: Record<string, string> = { '"': '"', '「': '」', '“': '”', '‘': '’' };
 
 export function isAsciiQuoted(text: string): boolean {
@@ -81,7 +81,7 @@ function readPlainFormulaBar(nodes: Node[]): string | undefined {
   let value = '';
   for (const node of nodes) {
     if (node.nodeType === 3) value += node.textContent ?? '';
-    else if (node.nodeType === 1 && (node as Element).tagName === 'BR') value += '\n';
+    else if (node instanceof HTMLBRElement) value += '\n';
     else return undefined;
   }
   return value;
@@ -92,7 +92,7 @@ export function readFormulaBar(root: Element | null): string | undefined {
   if (!root || !root.matches('.cell-input')) return undefined;
   const nodes = Array.from(root.childNodes);
   const last = nodes.at(-1);
-  if (!last || last.nodeType !== 1 || (last as Element).tagName !== 'BR') return undefined;
+  if (!(last instanceof HTMLBRElement)) return undefined;
   if (nodes.length === 2 && nodes[0] instanceof Element && nodes[0].tagName === 'BDO') {
     return readHighlightedFormula(nodes[0]);
   }

@@ -34,10 +34,7 @@ function inferLatestFormulaReplacement(
   };
 }
 
-function parseTraditionalReplacement(
-  nodes: Node[],
-  labels: HTMLElement[],
-): ParseResult | undefined {
+function parseTraditionalReplacement(nodes: Node[], labels: Element[]): ParseResult | undefined {
   const traditional = partialLabels.zhTW;
   if (
     !labels.some(
@@ -63,7 +60,7 @@ function parseTraditionalReplacement(
   return replacement(before, after);
 }
 
-function parseChineseReplacement(labels: HTMLElement[]): ParseResult | undefined {
+function parseChineseReplacement(labels: Element[]): ParseResult | undefined {
   if (labels.length !== 1) return undefined;
   const label = labels[0]!;
   if (!label.textContent?.trim().startsWith('已用')) return undefined;
@@ -93,7 +90,7 @@ const strictReplacementLocales = [
   partialLabels.ar,
 ];
 
-function validReplacementLabels(separator: HTMLElement, labels: HTMLElement[]): boolean {
+function validReplacementLabels(separator: Element, labels: Element[]): boolean {
   const locales = strictReplacementLocales.filter(
     (locale) => locale.separator === separator.textContent?.trim(),
   );
@@ -105,7 +102,7 @@ function validReplacementLabels(separator: HTMLElement, labels: HTMLElement[]): 
   );
 }
 
-function parseReplacement(nodes: Node[], labels: HTMLElement[]): ParseResult | undefined {
+function parseReplacement(nodes: Node[], labels: Element[]): ParseResult | undefined {
   const separator = labels.find((label) => separators.includes(label.textContent?.trim() ?? ''));
   if (!separator) return undefined;
   if (!validReplacementLabels(separator, labels))
@@ -119,7 +116,7 @@ function parseReplacement(nodes: Node[], labels: HTMLElement[]): ParseResult | u
   return replacement(first, second);
 }
 
-function singleActionValueNodes(nodes: Node[], label: HTMLElement): Node[] | undefined {
+function singleActionValueNodes(nodes: Node[], label: Element): Node[] | undefined {
   const action = label.textContent?.trim();
   const valueNodes = nodes.slice(nodes.indexOf(label) + 1);
   if (action !== partialLabels.fr.add && action !== partialLabels.fr.delete) return valueNodes;
@@ -132,7 +129,7 @@ function singleActionValueNodes(nodes: Node[], label: HTMLElement): Node[] | und
   ];
 }
 
-function parseSingleAction(nodes: Node[], labels: HTMLElement[]): ParseResult | undefined {
+function parseSingleAction(nodes: Node[], labels: Element[]): ParseResult | undefined {
   if (labels.length !== 1) return undefined;
   const label = labels[0]!;
   const action = label.textContent?.trim() ?? '';
