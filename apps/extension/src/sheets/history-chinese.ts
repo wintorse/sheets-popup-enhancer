@@ -17,7 +17,7 @@ function readChineseQuoted(text: string): string | undefined {
   return undefined;
 }
 
-export function chineseReplacement(node: HTMLElement): Edit | undefined {
+export function chineseReplacement(node: Element): Edit | undefined {
   const children = Array.from(node.childNodes);
   const nested = children.filter(bold);
   if (
@@ -58,7 +58,7 @@ class ChineseHistoryReader {
     this.oldText = (value.textContent ?? '').match(/^\s*[:：]\s*"([\s\S]*)"\s*$/u)?.[1];
   }
 
-  private readReplacement(node: HTMLElement): ParseResult | undefined {
+  private readReplacement(node: Element): ParseResult | undefined {
     const edit = chineseReplacement(node);
     if (!edit) return unsupported('中国語の置換を特定できませんでした');
     this.edits.push(edit);

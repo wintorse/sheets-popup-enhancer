@@ -10,9 +10,10 @@ async function settle() {
 
 function mockGridVisibility(grid: HTMLElement) {
   // jsdom has no layout. Browser tests exercise real grid visibility and CSS.
-  vi.spyOn(grid, 'getClientRects').mockImplementation(
-    () => ({ length: grid.hidden ? 0 : 1 }) as DOMRectList,
-  );
+  vi.spyOn(grid, 'getClientRects').mockImplementation(() => {
+    const rects = grid.hidden ? [] : [new DOMRect()];
+    return Object.assign(rects, { item: (index: number) => rects[index] ?? null });
+  });
 }
 
 function fixture() {

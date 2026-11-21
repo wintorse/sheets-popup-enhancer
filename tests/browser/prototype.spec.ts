@@ -73,6 +73,10 @@ function installMockExtension() {
 // Browser-side callbacks use the same API shape that Playwright installs.
 declare global {
   var chrome: ReturnType<typeof installMockExtension>;
+  interface Window {
+    copiedValues: string[];
+    rejectCopy: boolean;
+  }
 }
 
 async function mockExtension(page: Page) {
@@ -197,15 +201,14 @@ test('content script: copies exact values and shows long text without diff styli
   page,
 }) => {
   await page.addInitScript(() => {
-    const state = window as typeof window & { copiedValues: string[]; rejectCopy: boolean };
-    state.copiedValues = [];
-    state.rejectCopy = false;
+    window.copiedValues = [];
+    window.rejectCopy = false;
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
       value: {
         writeText: async (text: string) => {
-          if (state.rejectCopy) throw new Error('denied');
-          state.copiedValues.push(text);
+          if (window.rejectCopy) throw new Error('denied');
+          window.copiedValues.push(text);
         },
       },
     });
@@ -231,11 +234,9 @@ test('content script: copies exact values and shows long text without diff styli
   await diff.getByRole('button', { name: '変更前をコピー' }).click();
   await menu.click();
   await diff.getByRole('button', { name: '変更後をコピー' }).click();
-  expect(
-    await page.evaluate(() => (window as typeof window & { copiedValues: string[] }).copiedValues),
-  ).toEqual([before, after, '', longText]);
+  expect(await page.evaluate(() => window.copiedValues)).toEqual([before, after, '', longText]);
   await page.evaluate(() => {
-    (window as typeof window & { rejectCopy: boolean }).rejectCopy = true;
+    window.rejectCopy = true;
   });
   await menu.click();
   await diff.getByRole('button', { name: '変更後をコピー' }).click();
@@ -285,9 +286,10 @@ test('content script: enhance, update, fall back, toggle and reinitialize withou
     await expect
       .poll(() =>
         popup.evaluate((element) => {
+          if (!(element instanceof HTMLElement)) throw new Error('Expected an HTML popup');
           const style = getComputedStyle(element);
           return (
-            (element as HTMLElement).offsetWidth -
+            element.offsetWidth -
             element.clientWidth -
             parseFloat(style.borderLeftWidth) -
             parseFloat(style.borderRightWidth)
@@ -319,7 +321,7 @@ test('content script: enhance, update, fall back, toggle and reinitialize withou
   await page.locator('.waffle-blameview, .docos-anchoreddocoview').evaluateAll((popups) => {
     for (const popup of popups)
       popup.addEventListener('keydown', (event) => {
-        (popup as HTMLElement).dataset.lastKey = (event as KeyboardEvent).key;
+        if (event instanceof KeyboardEvent) popup.dataset.lastKey = event.key;
       });
   });
   await history.focus();
@@ -420,9 +422,12 @@ test('content script: text scale updates comments and both history views', async
   await editor.press('End');
   await editor.press('Enter');
   await page.keyboard.type('with multiple lines');
-  expect(await editor.evaluate((element) => (element as HTMLElement).innerText)).toBe(
-    'A reply\nwith multiple lines',
-  );
+  expect(
+    await editor.evaluate((element) => {
+      if (!(element instanceof HTMLElement)) throw new Error('Expected an HTML editor');
+      return element.innerText;
+    }),
+  ).toBe('A reply\nwith multiple lines');
   await page.evaluate(async () => {
     await chrome.storage.local.set({ 'spe.settings.v1': { fontScale: 80, diffEnabled: false } });
   });
@@ -628,9 +633,9 @@ test('content script: Row Highlighter compatibility keeps native popups above hi
   await page.locator('[id="0-grid-container"]').evaluate((first) => {
     const second = document.createElement('div');
     second.id = '123-grid-container';
-    second.style.cssText = (first as HTMLElement).style.cssText;
+    second.style.cssText = first.style.cssText;
     first.parentElement!.append(second);
-    (first as HTMLElement).style.display = 'none';
+    first.style.display = 'none';
   });
   await expect(page.locator('[id="123-grid-container"] > #rh-app-container')).toHaveCount(1);
   await expect(highlight).toHaveCSS('top', '0px');
@@ -639,7 +644,7 @@ test('content script: Row Highlighter compatibility keeps native popups above hi
   expect(await topElementIsPopup(history)).toBe(true);
 
   await page.locator('[id="123-grid-container"]').evaluate((second) => {
-    (second as HTMLElement).hidden = true;
+    second.toggleAttribute('hidden', true);
     document.getElementById('0-grid-container')!.style.display = '';
   });
   await expect(page.locator('[id="0-grid-container"] > #rh-app-container')).toHaveCount(1);
@@ -647,14 +652,14 @@ test('content script: Row Highlighter compatibility keeps native popups above hi
   await expect(page.locator('#before + #rh-app-container + #after')).toHaveCount(1);
   await expect(highlight).not.toHaveAttribute('data-spe-row-highlighter');
   await page.locator('[id="123-grid-container"]').evaluate((second) => {
-    (second as HTMLElement).hidden = false;
+    second.toggleAttribute('hidden', false);
   });
   await expect(page.locator('[id="123-grid-container"] > #rh-app-container')).toHaveCount(1);
 
   await page.locator('[id="123-grid-container"]').evaluate((second) => {
     const third = document.createElement('div');
     third.id = '456-grid-container';
-    third.style.cssText = (second as HTMLElement).style.cssText;
+    third.style.cssText = second.style.cssText;
     second.replaceWith(third);
   });
   await expect(page.locator('[id="456-grid-container"] > #rh-app-container')).toHaveCount(1);
@@ -725,7 +730,8 @@ async function expectReachableGrip(page: Page, popup: Locator, horizontalMargin 
           rect.x + rect.width / 2,
           rect.y + rect.height / 2,
         );
-        return hit === (element.getRootNode() as ShadowRoot).host;
+        const root = element.getRootNode();
+        return root instanceof ShadowRoot && hit === root.host;
       }),
     )
     .toBe(true);
@@ -852,12 +858,12 @@ test('content script: manual comment and history widths last until the page relo
   await expect(comment).toHaveCSS('width', '470px');
   await expect(history).toHaveCSS('width', '540px');
   await page.locator('[data-spe-popup]').evaluateAll((popups) => {
-    for (const popup of popups) (popup as HTMLElement).style.display = 'none';
+    for (const popup of popups) popup.style.display = 'none';
   });
   await expect(comment).toBeHidden();
   await expect(history).toBeHidden();
   await page.locator('[data-spe-popup]').evaluateAll((popups) => {
-    for (const popup of popups) (popup as HTMLElement).style.display = '';
+    for (const popup of popups) popup.style.display = '';
   });
   await expect(comment).toHaveCSS('width', '470px');
   await expect(history).toHaveCSS('width', '540px');
@@ -902,19 +908,18 @@ test('content script: comment grip stays above a popup with its own stacking ord
   await dragHandle(page, grip, 40);
   await expect(popup).toHaveCSS('width', '440px');
   await popup.evaluate((element) => {
-    (element as HTMLElement).style.zIndex = '2000';
+    element.style.zIndex = '2000';
   });
   await expectReachableGrip(page, popup);
   await dragHandle(page, grip, 20);
   await expect(popup).toHaveCSS('width', '460px');
   // A separate overlay above the popup must still appear above the grip.
   await popup.evaluate((element) => {
-    const popup = element as HTMLElement;
     const overlay = document.createElement('div');
     overlay.className = 'higher-overlay';
-    const { width, height, left, top } = getComputedStyle(popup);
+    const { width, height, left, top } = getComputedStyle(element);
     overlay.style.cssText = `position:absolute;left:${left};top:${top};width:${width};height:${height};z-index:2001;background:white`;
-    popup.parentElement!.append(overlay);
+    element.parentElement!.append(overlay);
   });
   const overlay = page.locator('.higher-overlay');
   await expect
@@ -999,9 +1004,9 @@ for (const kind of ['history', 'comment'] as const) {
     await expect(page.locator('spe-resize-grip')).toHaveCount(0);
     expect(
       await popup.evaluate((element) => ({
-        min: (element as HTMLElement).style.minHeight,
-        max: (element as HTMLElement).style.maxHeight,
-        priority: (element as HTMLElement).style.getPropertyPriority('max-height'),
+        min: element.style.minHeight,
+        max: element.style.maxHeight,
+        priority: element.style.getPropertyPriority('max-height'),
       })),
     ).toEqual({ min: '900px', max: '900px', priority: 'important' });
   });
@@ -1168,8 +1173,8 @@ test('content script: resets reused history scroll when reopened', async ({ page
   await popup.evaluate((node) => node.classList.add('native-update'));
   await expect.poll(() => popup.evaluate((node) => node.scrollTop)).toBe(200);
   await popup.evaluate((node) => {
-    (node as HTMLElement).style.display = 'none';
-    (node as HTMLElement).style.display = 'flex';
+    node.style.display = 'none';
+    node.style.display = 'flex';
   });
   await expect.poll(() => popup.evaluate((node) => node.scrollTop)).toBe(0);
   await popup.evaluate((node) => {
@@ -1177,8 +1182,8 @@ test('content script: resets reused history scroll when reopened', async ({ page
   });
   await expect.poll(() => popup.evaluate((node) => node.scrollTop)).toBe(200);
   await popup.evaluate((node) => {
-    (node as HTMLElement).hidden = true;
-    (node as HTMLElement).hidden = false;
+    node.toggleAttribute('hidden', true);
+    node.toggleAttribute('hidden', false);
   });
   await expect.poll(() => popup.evaluate((node) => node.scrollTop)).toBe(0);
   await popup.evaluate((node) => {
@@ -1186,8 +1191,8 @@ test('content script: resets reused history scroll when reopened', async ({ page
   });
   await expect.poll(() => popup.evaluate((node) => node.scrollTop)).toBe(200);
   await page.locator('#history-owner').evaluate((node) => {
-    (node as HTMLElement).style.display = 'none';
-    (node as HTMLElement).style.display = 'block';
+    node.style.display = 'none';
+    node.style.display = 'block';
   });
   await expect.poll(() => popup.evaluate((node) => node.scrollTop)).toBe(0);
   await popup.evaluate((node) => {
@@ -1357,22 +1362,22 @@ test('content script: returning from the end of history restores a reused value'
   await expect(diff.locator('.after .value')).toHaveText('abc');
   await previous.dispatchEvent('click');
   await content.evaluate((node) => {
-    (node as HTMLElement).style.display = 'none';
+    node.style.display = 'none';
   });
   await previous.evaluate((node) => node.setAttribute('aria-disabled', 'true'));
   await next.evaluate((node) => node.setAttribute('aria-disabled', 'false'));
   await message.evaluate((node) => {
-    (node as HTMLElement).style.display = 'block';
+    node.style.display = 'block';
   });
   await expect(diff).toHaveCount(0);
   await expect(message).toBeVisible();
   // Sheets reuses the previous value node without changing its innerHTML.
   // Sheets may reveal the same value before the navigation click reaches the extension.
   await content.evaluate((node) => {
-    (node as HTMLElement).style.display = 'block';
+    node.style.display = 'block';
   });
   await message.evaluate((node) => {
-    (node as HTMLElement).style.display = 'none';
+    node.style.display = 'none';
   });
   await next.dispatchEvent('click');
   await previous.evaluate((node) => node.setAttribute('aria-disabled', 'false'));
@@ -1989,7 +1994,7 @@ test('content script: navigation keeps the old diff until the next history is re
   await expect(native).toBeHidden();
   const content = page.locator('.docs-blameview-content');
   await content.evaluate((node) => {
-    (node as HTMLElement).style.display = 'none';
+    node.style.display = 'none';
   });
   await page.clock.runFor(350);
   await expect(popup).toHaveAttribute('data-spe-history-loading');
@@ -1998,7 +2003,9 @@ test('content script: navigation keeps the old diff until the next history is re
   await native.evaluate((node) => {
     node.innerHTML =
       '<span class="docs-blame-bold-text">Replaced:</span> "two" <span class="docs-blame-bold-text">with</span> "three"';
-    (node.parentElement as HTMLElement).style.display = 'block';
+    const parent = node.parentElement;
+    if (!parent) throw new Error('Expected a history content container');
+    parent.style.display = 'block';
   });
   await expect(diff.locator('.after .value')).toHaveText('three');
   await expect(diff).toHaveCount(1);

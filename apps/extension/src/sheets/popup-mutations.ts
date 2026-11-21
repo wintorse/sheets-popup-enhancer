@@ -1,7 +1,5 @@
 export function mutationElement(mutation: MutationRecord): Element | null {
-  return mutation.target.nodeType === 1
-    ? (mutation.target as Element)
-    : mutation.target.parentElement;
+  return mutation.target instanceof Element ? mutation.target : mutation.target.parentElement;
 }
 
 export function popupReopened(mutation: MutationRecord, element: HTMLElement): boolean {

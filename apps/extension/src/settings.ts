@@ -36,7 +36,7 @@ function normalizeNumber(
 }
 
 function normalizeSettings(value: unknown): Settings {
-  const raw = value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+  const raw: Record<string, unknown> = value && typeof value === 'object' ? { ...value } : {};
   return {
     commentWidth: normalizeNumber(
       raw.commentWidth,

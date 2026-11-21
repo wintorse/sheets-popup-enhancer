@@ -8,7 +8,8 @@
       }
     ],
     "no-nested-ternary": "error",
-    "typescript/no-floating-promises": "error"
+    "typescript/no-floating-promises": "error",
+    "typescript/no-unsafe-type-assertion": "error"
   },
   "ignorePatterns": ["**/.output/**", "**/.wxt/**", "**/dist/**", "test-results/**"],
   "options": {

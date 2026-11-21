@@ -49,7 +49,9 @@ export class PopupController {
   private stopWatching = () => {};
   // Catch intrinsic size changes after Svelte renders, images load or fonts change.
   private sizeObserver = new ResizeObserver((entries) => {
-    for (const entry of entries) this.schedule(entry.target as HTMLElement);
+    for (const { target } of entries) {
+      if (target instanceof HTMLElement) this.schedule(target);
+    }
   });
   private observer = new MutationObserver((mutations) => {
     for (const mutation of mutations) this.handleMutation(mutation);
@@ -640,7 +642,7 @@ export class PopupController {
     });
   }
   private collect(node: Node) {
-    const element = node.nodeType === 1 ? (node as Element) : node.parentElement;
+    const element = node instanceof Element ? node : node.parentElement;
     if (!element || element.closest('spe-history-diff, spe-resize-grip')) return;
     const popup = element.closest<HTMLElement>(POPUPS);
     if (popup) this.schedule(popup);
