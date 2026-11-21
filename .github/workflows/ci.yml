@@ -57,9 +57,23 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  e2e-firefox:
+    name: Firefox E2E
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/setup@ab48ae04e3ab426a6ee9c1e34c4063ddc5db3405 # v3.2.0
+        with:
+          runtime: node@26
+          cache: true
+          install: false
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps firefox
+      - run: pnpm test:e2e:firefox
+
   release:
     if: github.ref == 'refs/heads/main'
-    needs: check
+    needs: [check, e2e-firefox]
     runs-on: ubuntu-latest
     concurrency:
       group: release-main
