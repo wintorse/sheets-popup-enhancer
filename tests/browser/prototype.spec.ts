@@ -318,11 +318,11 @@ test('content script: enhance, update, fall back, toggle and reinitialize withou
   await expect(history).toHaveCSS('width', '630px');
   await comment.focus();
   await dragHandle(page, gripHost(comment).locator('[data-resize-handle]'), 20);
-  await expect(comment).toHaveCSS('width', '460px');
+  await expect(comment).toHaveCSS('width', '420px');
   await expect(comment).toBeFocused();
   await page.keyboard.press('ArrowLeft');
   await expect(comment).toHaveAttribute('data-last-key', 'ArrowLeft');
-  await expect(comment).toHaveCSS('width', '460px');
+  await expect(comment).toHaveCSS('width', '420px');
 
   await page.locator('spe-history-diff').evaluate((element) => element.remove());
   await expect(page.locator('spe-history-diff')).toHaveCount(1);
@@ -521,6 +521,7 @@ test('extension settings: save and restore local settings', async ({ page }) => 
   await expect(fontScale).toHaveAttribute('aria-valuetext', '120%');
   await expect(fontScale).toHaveCSS('--fill', '100%');
   const commentWidth = page.getByRole('slider', { name: 'コメント' });
+  await expect(commentWidth).toHaveValue('400');
   await commentWidth.focus();
   await page.keyboard.press('ArrowRight');
   await expect(commentWidth).toHaveAttribute('aria-valuetext', /ピクセル/);
@@ -583,7 +584,7 @@ test('extension settings: save and restore local settings', async ({ page }) => 
     )
     .toMatchObject({
       layout: 'split',
-      commentWidth: 440,
+      commentWidth: 400,
       fontScale: 100,
       rowHighlighterCompatibility: true,
     });
@@ -795,7 +796,7 @@ for (const kind of ['comment', 'history'] as const) {
     await page.setViewportSize({ width: 1000, height: 800 });
     await mockExtension(page);
     const selector = kind === 'comment' ? '.docos-anchoreddocoview' : '.waffle-blameview';
-    const width = kind === 'comment' ? 440 : 620;
+    const width = kind === 'comment' ? 400 : 620;
     await page.route('**/fixtures/right-first-popup', (route) =>
       route.fulfill({
         contentType: 'text/html',
@@ -888,10 +889,10 @@ test('content script: manual comment and history widths last until the page relo
   await page.addScriptTag({ path: script });
   const comment = page.locator('.docos-anchoreddocoview');
   const history = page.locator('.waffle-blameview');
-  await expect(comment).toHaveCSS('width', '440px');
+  await expect(comment).toHaveCSS('width', '400px');
   await expect(history).toHaveCSS('width', '620px');
   await dragHandle(page, gripHost(comment).locator('[data-resize-handle]'), 70);
-  await expect(comment).toHaveCSS('width', '510px');
+  await expect(comment).toHaveCSS('width', '470px');
   await expect(history).toHaveCSS('width', '620px');
   await dragHandle(page, gripHost(history).locator('[data-resize-handle]'), -80);
   await expect(history).toHaveCSS('width', '540px');
@@ -906,7 +907,7 @@ test('content script: manual comment and history widths last until the page relo
       popup.replaceWith(fresh);
     }
   });
-  await expect(comment).toHaveCSS('width', '510px');
+  await expect(comment).toHaveCSS('width', '470px');
   await expect(history).toHaveCSS('width', '540px');
   await page.locator('[data-spe-popup]').evaluateAll((popups) => {
     for (const popup of popups) (popup as HTMLElement).style.display = 'none';
@@ -916,7 +917,7 @@ test('content script: manual comment and history widths last until the page relo
   await page.locator('[data-spe-popup]').evaluateAll((popups) => {
     for (const popup of popups) (popup as HTMLElement).style.display = '';
   });
-  await expect(comment).toHaveCSS('width', '510px');
+  await expect(comment).toHaveCSS('width', '470px');
   await expect(history).toHaveCSS('width', '540px');
   await page.evaluate(async () => {
     const { chrome } = globalThis as unknown as {
@@ -933,19 +934,19 @@ test('content script: manual comment and history widths last until the page relo
     if (stored['spe.settings.v1'] !== undefined) throw new Error('Manual widths were persisted');
     await chrome.storage.local.set({ 'spe.settings.v1': { fontScale: 110 } });
   });
-  await expect(comment).toHaveCSS('width', '510px');
+  await expect(comment).toHaveCSS('width', '470px');
   await expect(history).toHaveCSS('width', '540px');
 
   await page.setViewportSize({ width: 400, height: 800 });
   await expect(comment).toHaveCSS('width', '400px');
   await expect(history).toHaveCSS('width', '400px');
   await page.setViewportSize({ width: 1440, height: 1080 });
-  await expect(comment).toHaveCSS('width', '510px');
+  await expect(comment).toHaveCSS('width', '470px');
   await expect(history).toHaveCSS('width', '540px');
 
   await page.reload();
   await page.addScriptTag({ path: script });
-  await expect(comment).toHaveCSS('width', '440px');
+  await expect(comment).toHaveCSS('width', '400px');
   await expect(history).toHaveCSS('width', '620px');
 });
 
@@ -967,13 +968,13 @@ test('content script: comment grip stays above a popup with its own stacking ord
   await expectReachableGrip(page, popup);
   const grip = gripHost(popup).locator('[data-resize-handle]');
   await dragHandle(page, grip, 40);
-  await expect(popup).toHaveCSS('width', '480px');
+  await expect(popup).toHaveCSS('width', '440px');
   await popup.evaluate((element) => {
     (element as HTMLElement).style.zIndex = '2000';
   });
   await expectReachableGrip(page, popup);
   await dragHandle(page, grip, 20);
-  await expect(popup).toHaveCSS('width', '500px');
+  await expect(popup).toHaveCSS('width', '460px');
   // A separate overlay above the popup must still appear above the grip.
   await popup.evaluate((element) => {
     const popup = element as HTMLElement;
