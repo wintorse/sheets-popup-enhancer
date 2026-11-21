@@ -38,7 +38,7 @@ describe('resize constraints', () => {
       target.style.width = '400px';
       const handle = document.createElement('div');
       vi.spyOn(target, 'getBoundingClientRect').mockImplementation(
-        () => ({ width: parseFloat(target.style.width) }) as DOMRect,
+        () => new DOMRect(0, 0, parseFloat(target.style.width)),
       );
       const setPointerCapture = vi.fn();
       const releasePointerCapture = vi.fn();

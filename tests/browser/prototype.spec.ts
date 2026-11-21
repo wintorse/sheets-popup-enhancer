@@ -26,6 +26,59 @@ function extensionContentType(asset: string): string {
   return 'application/javascript';
 }
 
+function installMockExtension() {
+  Object.defineProperty(navigator, 'language', { configurable: true, value: 'ja' });
+  const listeners = new Set<(changes: unknown, area: string) => void>();
+  let data: Record<string, unknown> = {};
+  const storage = {
+    async get() {
+      return data;
+    },
+    async set(value: Record<string, unknown>) {
+      const previous = data;
+      data = { ...data, ...value };
+      for (const listener of listeners)
+        listener(
+          Object.fromEntries(
+            Object.entries(value).map(([key, newValue]) => [
+              key,
+              { oldValue: previous[key], newValue },
+            ]),
+          ),
+          'local',
+        );
+    },
+  };
+  const runtime: { id?: string; getURL: (path: string) => string } = {
+    id: 'prototype-test',
+    getURL: (path: string) => `${location.origin}/__extension__/${path.replace(/^\//, '')}`,
+  };
+  const extensionApi = {
+    runtime,
+    storage: {
+      local: storage,
+      onChanged: {
+        addListener: (listener: (changes: unknown, area: string) => void) =>
+          listeners.add(listener),
+        removeListener: (listener: (changes: unknown, area: string) => void) =>
+          listeners.delete(listener),
+      },
+    },
+  };
+  Object.defineProperty(globalThis, 'chrome', { configurable: true, value: extensionApi });
+  Object.defineProperty(globalThis, 'browser', { configurable: true, value: extensionApi });
+  return extensionApi;
+}
+
+// Browser-side callbacks use the same API shape that Playwright installs.
+declare global {
+  var chrome: ReturnType<typeof installMockExtension>;
+  interface Window {
+    copiedValues: string[];
+    rejectCopy: boolean;
+  }
+}
+
 async function mockExtension(page: Page) {
   await page.route('**/__extension__/**', async (route) => {
     const asset = new URL(route.request().url()).pathname.split('/__extension__/')[1];
@@ -36,47 +89,11 @@ async function mockExtension(page: Page) {
       : await readFile(file);
     await route.fulfill({ body, contentType: extensionContentType(asset) });
   });
-  await page.addInitScript(() => {
-    Object.defineProperty(navigator, 'language', { configurable: true, value: 'ja' });
-    const listeners = new Set<(changes: unknown, area: string) => void>();
-    let data: Record<string, unknown> = {};
-    const storage = {
-      async get() {
-        return data;
-      },
-      async set(value: Record<string, unknown>) {
-        const previous = data;
-        data = { ...data, ...value };
-        for (const listener of listeners)
-          listener(
-            Object.fromEntries(
-              Object.entries(value).map(([key, newValue]) => [
-                key,
-                { oldValue: previous[key], newValue },
-              ]),
-            ),
-            'local',
-          );
-      },
-    };
-    const extensionApi = {
-      runtime: {
-        id: 'prototype-test',
-        getURL: (path: string) => `${location.origin}/__extension__/${path.replace(/^\//, '')}`,
-      },
-      storage: {
-        local: storage,
-        onChanged: {
-          addListener: (listener: (changes: unknown, area: string) => void) =>
-            listeners.add(listener),
-          removeListener: (listener: (changes: unknown, area: string) => void) =>
-            listeners.delete(listener),
-        },
-      },
-    };
-    Object.defineProperty(globalThis, 'chrome', { configurable: true, value: extensionApi });
-    Object.defineProperty(globalThis, 'browser', { configurable: true, value: extensionApi });
-  });
+  await page.addInitScript(installMockExtension);
+}
+
+function readStoredSettings(page: Page) {
+  return page.evaluate(async () => (await chrome.storage.local.get())['spe.settings.v1']);
 }
 
 // These fixtures emulate Sheets markup and exercise the bundled content script.
@@ -184,15 +201,14 @@ test('content script: copies exact values and shows long text without diff styli
   page,
 }) => {
   await page.addInitScript(() => {
-    const state = window as typeof window & { copiedValues: string[]; rejectCopy: boolean };
-    state.copiedValues = [];
-    state.rejectCopy = false;
+    window.copiedValues = [];
+    window.rejectCopy = false;
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
       value: {
         writeText: async (text: string) => {
-          if (state.rejectCopy) throw new Error('denied');
-          state.copiedValues.push(text);
+          if (window.rejectCopy) throw new Error('denied');
+          window.copiedValues.push(text);
         },
       },
     });
@@ -218,11 +234,9 @@ test('content script: copies exact values and shows long text without diff styli
   await diff.getByRole('button', { name: '変更前をコピー' }).click();
   await menu.click();
   await diff.getByRole('button', { name: '変更後をコピー' }).click();
-  expect(
-    await page.evaluate(() => (window as typeof window & { copiedValues: string[] }).copiedValues),
-  ).toEqual([before, after, '', longText]);
+  expect(await page.evaluate(() => window.copiedValues)).toEqual([before, after, '', longText]);
   await page.evaluate(() => {
-    (window as typeof window & { rejectCopy: boolean }).rejectCopy = true;
+    window.rejectCopy = true;
   });
   await menu.click();
   await diff.getByRole('button', { name: '変更後をコピー' }).click();
@@ -264,7 +278,7 @@ test('content script: enhance, update, fall back, toggle and reinitialize withou
   await expect(page.locator('spe-history-diff table')).toHaveClass(/split/);
   const history = page.locator('.waffle-blameview');
   const rect = await history.boundingBox();
-  expect(rect!.x + rect!.width).toBeLessThanOrEqual(1428);
+  expect(rect!.x + rect!.width).toBeLessThanOrEqual(page.viewportSize()!.width);
   const comment = page.locator('.docos-anchoreddocoview');
   // A popup that does not overflow must not reserve an empty scrollbar column.
   for (const popup of [history, comment]) {
@@ -272,9 +286,10 @@ test('content script: enhance, update, fall back, toggle and reinitialize withou
     await expect
       .poll(() =>
         popup.evaluate((element) => {
+          if (!(element instanceof HTMLElement)) throw new Error('Expected an HTML popup');
           const style = getComputedStyle(element);
           return (
-            (element as HTMLElement).offsetWidth -
+            element.offsetWidth -
             element.clientWidth -
             parseFloat(style.borderLeftWidth) -
             parseFloat(style.borderRightWidth)
@@ -306,11 +321,11 @@ test('content script: enhance, update, fall back, toggle and reinitialize withou
   await page.locator('.waffle-blameview, .docos-anchoreddocoview').evaluateAll((popups) => {
     for (const popup of popups)
       popup.addEventListener('keydown', (event) => {
-        (popup as HTMLElement).dataset.lastKey = (event as KeyboardEvent).key;
+        if (event instanceof KeyboardEvent) popup.dataset.lastKey = event.key;
       });
   });
   await history.focus();
-  await dragHandle(page, gripHost(history).locator('[data-resize-handle]'), 10);
+  await dragHandle(page, gripHost(history).locator('[data-resize-handle]'), -10);
   await expect(history).toHaveCSS('width', '630px');
   await expect(history).toBeFocused();
   await page.keyboard.press('ArrowRight');
@@ -318,11 +333,11 @@ test('content script: enhance, update, fall back, toggle and reinitialize withou
   await expect(history).toHaveCSS('width', '630px');
   await comment.focus();
   await dragHandle(page, gripHost(comment).locator('[data-resize-handle]'), 20);
-  await expect(comment).toHaveCSS('width', '460px');
+  await expect(comment).toHaveCSS('width', '420px');
   await expect(comment).toBeFocused();
   await page.keyboard.press('ArrowLeft');
   await expect(comment).toHaveAttribute('data-last-key', 'ArrowLeft');
-  await expect(comment).toHaveCSS('width', '460px');
+  await expect(comment).toHaveCSS('width', '420px');
 
   await page.locator('spe-history-diff').evaluate((element) => element.remove());
   await expect(page.locator('spe-history-diff')).toHaveCount(1);
@@ -351,23 +366,8 @@ test('content script: enhance, update, fall back, toggle and reinitialize withou
   await layoutTrigger.click();
   await expect(page.getByRole('button', { name: 'Split', exact: true })).toBeDisabled();
   await page.getByRole('button', { name: 'Unified', exact: true }).click();
-  const savedLayout = await page.evaluate(async () => {
-    const chrome = (
-      globalThis as unknown as {
-        chrome: {
-          storage: { local: { get: (key: string) => Promise<Record<string, { layout: string }>> } };
-        };
-      }
-    ).chrome;
-    return (await chrome.storage.local.get('spe.settings.v1'))['spe.settings.v1'].layout;
-  });
-  expect(savedLayout).toBe('split');
+  expect(await readStoredSettings(page)).toMatchObject({ layout: 'split' });
   await page.evaluate(async () => {
-    const chrome = (
-      globalThis as unknown as {
-        chrome: { storage: { local: { set: (data: unknown) => Promise<void> } } };
-      }
-    ).chrome;
     await chrome.storage.local.set({
       'spe.settings.v1': {
         diffEnabled: false,
@@ -379,7 +379,7 @@ test('content script: enhance, update, fall back, toggle and reinitialize withou
   });
   await expect(page.locator('spe-history-diff')).toHaveCount(0);
   await expect(page.locator('.docs-blameview-value-content')).toBeVisible();
-  await expect(history).toHaveCSS('width', '700px');
+  await expect(history).toHaveCSS('width', '630px');
   // Loading a new content-script instance invalidates the previous instance and restores its styles.
   await page.addScriptTag({ path: script });
   await expect(page.locator('spe-resize-grip')).toHaveCount(2);
@@ -407,11 +407,6 @@ test('content script: text scale updates comments and both history views', async
   await expect(diff).toHaveCSS('font-size', '12px');
   await expect(comment).toHaveCSS('zoom', '1');
   await page.evaluate(async () => {
-    const chrome = (
-      globalThis as unknown as {
-        chrome: { storage: { local: { set: (data: unknown) => Promise<void> } } };
-      }
-    ).chrome;
     await chrome.storage.local.set({ 'spe.settings.v1': { fontScale: 200 } });
   });
   await expect
@@ -427,15 +422,13 @@ test('content script: text scale updates comments and both history views', async
   await editor.press('End');
   await editor.press('Enter');
   await page.keyboard.type('with multiple lines');
-  expect(await editor.evaluate((element) => (element as HTMLElement).innerText)).toBe(
-    'A reply\nwith multiple lines',
-  );
+  expect(
+    await editor.evaluate((element) => {
+      if (!(element instanceof HTMLElement)) throw new Error('Expected an HTML editor');
+      return element.innerText;
+    }),
+  ).toBe('A reply\nwith multiple lines');
   await page.evaluate(async () => {
-    const chrome = (
-      globalThis as unknown as {
-        chrome: { storage: { local: { set: (data: unknown) => Promise<void> } } };
-      }
-    ).chrome;
     await chrome.storage.local.set({ 'spe.settings.v1': { fontScale: 80, diffEnabled: false } });
   });
   await expect(native).toBeVisible();
@@ -521,6 +514,7 @@ test('extension settings: save and restore local settings', async ({ page }) => 
   await expect(fontScale).toHaveAttribute('aria-valuetext', '120%');
   await expect(fontScale).toHaveCSS('--fill', '100%');
   const commentWidth = page.getByRole('slider', { name: 'コメント' });
+  await expect(commentWidth).toHaveValue('400');
   await commentWidth.focus();
   await page.keyboard.press('ArrowRight');
   await expect(commentWidth).toHaveAttribute('aria-valuetext', /ピクセル/);
@@ -530,26 +524,7 @@ test('extension settings: save and restore local settings', async ({ page }) => 
   await page.getByLabel('初期表示').selectOption('unified');
   await page.getByRole('checkbox', { name: '有効にする' }).uncheck();
   await expect
-    .poll(() =>
-      page.evaluate(async () => {
-        const chrome = (
-          globalThis as unknown as {
-            chrome: {
-              storage: {
-                local: {
-                  get: (
-                    key: string,
-                  ) => Promise<
-                    Record<string, { layout: string; commentWidth: number; diffEnabled: boolean }>
-                  >;
-                };
-              };
-            };
-          }
-        ).chrome;
-        return (await chrome.storage.local.get('spe.settings.v1'))['spe.settings.v1'];
-      }),
-    )
+    .poll(() => readStoredSettings(page))
     .toMatchObject({
       layout: 'unified',
       commentWidth: Number(changedWidth),
@@ -563,27 +538,10 @@ test('extension settings: save and restore local settings', async ({ page }) => 
   await expect(page.getByRole('checkbox', { name: '有効にする' })).toBeChecked();
   await expect(compatibility).toBeChecked();
   await expect
-    .poll(() =>
-      page.evaluate(async () => {
-        const chrome = (
-          globalThis as unknown as {
-            chrome: {
-              storage: {
-                local: {
-                  get: (
-                    key: string,
-                  ) => Promise<Record<string, { layout: string; commentWidth: number }>>;
-                };
-              };
-            };
-          }
-        ).chrome;
-        return (await chrome.storage.local.get('spe.settings.v1'))['spe.settings.v1'];
-      }),
-    )
+    .poll(() => readStoredSettings(page))
     .toMatchObject({
       layout: 'split',
-      commentWidth: 440,
+      commentWidth: 400,
       fontScale: 100,
       rowHighlighterCompatibility: true,
     });
@@ -618,12 +576,7 @@ test('content script: Row Highlighter compatibility keeps native popups above hi
 
   async function setCompatibility(enabled: boolean) {
     await page.evaluate(async (rowHighlighterCompatibility) => {
-      const api = (
-        globalThis as unknown as {
-          chrome: { storage: { local: { set: (value: unknown) => Promise<void> } } };
-        }
-      ).chrome;
-      await api.storage.local.set({ 'spe.settings.v1': { rowHighlighterCompatibility } });
+      await chrome.storage.local.set({ 'spe.settings.v1': { rowHighlighterCompatibility } });
     }, enabled);
   }
   async function topElementIsPopup(popup: Locator) {
@@ -680,9 +633,9 @@ test('content script: Row Highlighter compatibility keeps native popups above hi
   await page.locator('[id="0-grid-container"]').evaluate((first) => {
     const second = document.createElement('div');
     second.id = '123-grid-container';
-    second.style.cssText = (first as HTMLElement).style.cssText;
+    second.style.cssText = first.style.cssText;
     first.parentElement!.append(second);
-    (first as HTMLElement).style.display = 'none';
+    first.style.display = 'none';
   });
   await expect(page.locator('[id="123-grid-container"] > #rh-app-container')).toHaveCount(1);
   await expect(highlight).toHaveCSS('top', '0px');
@@ -691,7 +644,7 @@ test('content script: Row Highlighter compatibility keeps native popups above hi
   expect(await topElementIsPopup(history)).toBe(true);
 
   await page.locator('[id="123-grid-container"]').evaluate((second) => {
-    (second as HTMLElement).hidden = true;
+    second.toggleAttribute('hidden', true);
     document.getElementById('0-grid-container')!.style.display = '';
   });
   await expect(page.locator('[id="0-grid-container"] > #rh-app-container')).toHaveCount(1);
@@ -699,14 +652,14 @@ test('content script: Row Highlighter compatibility keeps native popups above hi
   await expect(page.locator('#before + #rh-app-container + #after')).toHaveCount(1);
   await expect(highlight).not.toHaveAttribute('data-spe-row-highlighter');
   await page.locator('[id="123-grid-container"]').evaluate((second) => {
-    (second as HTMLElement).hidden = false;
+    second.toggleAttribute('hidden', false);
   });
   await expect(page.locator('[id="123-grid-container"] > #rh-app-container')).toHaveCount(1);
 
   await page.locator('[id="123-grid-container"]').evaluate((second) => {
     const third = document.createElement('div');
     third.id = '456-grid-container';
-    third.style.cssText = (second as HTMLElement).style.cssText;
+    third.style.cssText = second.style.cssText;
     second.replaceWith(third);
   });
   await expect(page.locator('[id="456-grid-container"] > #rh-app-container')).toHaveCount(1);
@@ -734,11 +687,6 @@ for (const [previous, current] of [
   test(`extension settings: restores ${previous} as ${current}`, async ({ page }) => {
     await mockExtension(page);
     await page.addInitScript((layout) => {
-      const chrome = (
-        globalThis as unknown as {
-          chrome: { storage: { local: { set: (data: unknown) => Promise<void> } } };
-        }
-      ).chrome;
       void chrome.storage.local.set({ 'spe.settings.v1': { layout } });
     }, previous);
     await page.goto('/__extension__/popup.html');
@@ -747,7 +695,7 @@ for (const [previous, current] of [
   });
 }
 
-async function expectReachableGrip(page: Page, popup: Locator) {
+async function expectReachableGrip(page: Page, popup: Locator, horizontalMargin = 0) {
   const grip = gripHost(popup).locator('[data-resize-handle]');
   await expect(grip).toBeVisible();
   await expect(grip).toBeInViewport({ ratio: 1 });
@@ -766,9 +714,9 @@ async function expectReachableGrip(page: Page, popup: Locator) {
       const rect = await popup.boundingBox();
       return (
         !!rect &&
-        rect.x >= 11.5 &&
+        rect.x >= horizontalMargin - 0.5 &&
         rect.y >= 144.5 &&
-        rect.x + rect.width <= viewport.width - 11.5 &&
+        rect.x + rect.width <= viewport.width - horizontalMargin + 0.5 &&
         rect.y + rect.height <= viewport.height - 36 - 13.5
       );
     })
@@ -782,11 +730,163 @@ async function expectReachableGrip(page: Page, popup: Locator) {
           rect.x + rect.width / 2,
           rect.y + rect.height / 2,
         );
-        return hit === (element.getRootNode() as ShadowRoot).host;
+        const root = element.getRootNode();
+        return root instanceof ShadowRoot && hit === root.host;
       }),
     )
     .toBe(true);
 }
+
+for (const kind of ['comment', 'history'] as const) {
+  test(`content script: ${kind} grows right first and uses a left grip at the window edge`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1000, height: 800 });
+    await mockExtension(page);
+    const selector = kind === 'comment' ? '.docos-anchoreddocoview' : '.waffle-blameview';
+    const width = kind === 'comment' ? 400 : 620;
+    await page.route('**/fixtures/right-first-popup', (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        // Synthetic native popup, independent of cell selection and pointer location.
+        body: `<!doctype html><div id="waffle-grid-container" style="position:fixed;inset:0">
+          <div class="${selector.slice(1)}" style="position:absolute;left:80px;top:250px;width:282px;height:160px;background:white">Popup</div>
+        </div>`,
+      }),
+    );
+    await page.goto('/fixtures/right-first-popup');
+    await page.addScriptTag({ path: extensionOutput('content-scripts/sheets.js') });
+    const popup = page.locator(selector);
+    const host = gripHost(popup);
+    await expect(popup).toHaveCSS('width', `${width}px`);
+    await expect.poll(() => popup.boundingBox()).toMatchObject({ x: 80, y: 250 });
+    await expect(host).not.toHaveAttribute('data-spe-grip-left', '');
+
+    await page.mouse.move(10, 200);
+    await popup.click({ position: { x: 30, y: 30 } });
+    await page.mouse.move(900, 700);
+    await popup.evaluate((node) => node.classList.add('docos-docoview-active'));
+    await expect.poll(() => popup.boundingBox()).toMatchObject({ x: 80, width });
+    await expect(host).not.toHaveAttribute('data-spe-grip-left', '');
+
+    await popup.evaluate((node) => {
+      node.style.left = '800px';
+    });
+    await expect.poll(() => popup.boundingBox()).toMatchObject({ x: 1000 - width, width });
+    await expect(host).toHaveAttribute('data-spe-grip-left', '');
+    await expectReachableGrip(page, popup);
+    await dragHandle(page, host.locator('[data-resize-handle]'), -80);
+    await expect(popup).toHaveCSS('width', `${width + 80}px`);
+    await expect.poll(() => popup.boundingBox()).toMatchObject({ x: 920 - width });
+
+    await popup.evaluate((node) => {
+      node.style.left = '40px';
+      node.style.width = '300px';
+    });
+    await expect.poll(() => popup.boundingBox()).toMatchObject({ x: 40, width: width + 80 });
+    await expect(host).not.toHaveAttribute('data-spe-grip-left', '');
+
+    await page.setViewportSize({ width: 400, height: 800 });
+    await expect(popup).toHaveCSS('width', '400px');
+    await expect.poll(() => popup.boundingBox()).toMatchObject({ x: 0 });
+    await expect(host).toHaveAttribute('data-spe-grip-left', '');
+    await page.setViewportSize({ width: 1000, height: 800 });
+    await expect(popup).toHaveCSS('width', `${width + 80}px`);
+
+    // Shrink enough to fit at the native left position. Releasing a left grip
+    // must still leave the open popup against the right edge.
+    const nativeLeft = 1000 - width + 20;
+    await popup.evaluate((node, left) => {
+      node.style.left = `${left}px`;
+    }, nativeLeft);
+    await expect(host).toHaveAttribute('data-spe-grip-left', '');
+    await dragHandle(page, host.locator('[data-resize-handle]'), 120);
+    const shrunkWidth = width - 40;
+    await expect
+      .poll(() => popup.boundingBox())
+      .toMatchObject({
+        x: 1000 - shrunkWidth,
+        width: shrunkWidth,
+      });
+    await expect(host).toHaveAttribute('data-spe-grip-left', '');
+
+    await popup.evaluate((node) => node.setAttribute('hidden', ''));
+    await expect(popup).toBeHidden();
+    await popup.evaluate((node) => node.removeAttribute('hidden'));
+    await expect
+      .poll(() => popup.boundingBox())
+      .toMatchObject({ x: nativeLeft, width: shrunkWidth });
+    await expect(host).not.toHaveAttribute('data-spe-grip-left', '');
+  });
+}
+
+test('content script: manual comment and history widths last until the page reloads', async ({
+  page,
+}) => {
+  await mockExtension(page);
+  await page.route('**/fixtures/page-widths', (route) =>
+    route.fulfill({
+      contentType: 'text/html',
+      // Synthetic popups can be replaced just as Sheets reuses or creates views.
+      body: `<!doctype html><div class="docos-anchoreddocoview" style="position:absolute;left:40px;top:200px;width:282px;height:160px;background:white">Comment</div>
+        <div class="waffle-blameview" style="position:absolute;left:40px;top:500px;width:320px;height:160px;background:white">History</div>`,
+    }),
+  );
+  const script = extensionOutput('content-scripts/sheets.js');
+  await page.goto('/fixtures/page-widths');
+  await page.addScriptTag({ path: script });
+  const comment = page.locator('.docos-anchoreddocoview');
+  const history = page.locator('.waffle-blameview');
+  await expect(comment).toHaveCSS('width', '400px');
+  await expect(history).toHaveCSS('width', '620px');
+  await dragHandle(page, gripHost(comment).locator('[data-resize-handle]'), 70);
+  await expect(comment).toHaveCSS('width', '470px');
+  await expect(history).toHaveCSS('width', '620px');
+  await dragHandle(page, gripHost(history).locator('[data-resize-handle]'), -80);
+  await expect(history).toHaveCSS('width', '540px');
+
+  await page.locator('[data-spe-popup]').evaluateAll((popups) => {
+    for (const popup of popups) {
+      const fresh = document.createElement('div');
+      fresh.className = popup.className;
+      fresh.style.cssText =
+        'position:absolute;left:50px;top:220px;width:282px;height:120px;background:white';
+      fresh.textContent = popup.textContent;
+      popup.replaceWith(fresh);
+    }
+  });
+  await expect(comment).toHaveCSS('width', '470px');
+  await expect(history).toHaveCSS('width', '540px');
+  await page.locator('[data-spe-popup]').evaluateAll((popups) => {
+    for (const popup of popups) popup.style.display = 'none';
+  });
+  await expect(comment).toBeHidden();
+  await expect(history).toBeHidden();
+  await page.locator('[data-spe-popup]').evaluateAll((popups) => {
+    for (const popup of popups) popup.style.display = '';
+  });
+  await expect(comment).toHaveCSS('width', '470px');
+  await expect(history).toHaveCSS('width', '540px');
+  await page.evaluate(async () => {
+    const stored = await chrome.storage.local.get();
+    if (stored['spe.settings.v1'] !== undefined) throw new Error('Manual widths were persisted');
+    await chrome.storage.local.set({ 'spe.settings.v1': { fontScale: 110 } });
+  });
+  await expect(comment).toHaveCSS('width', '470px');
+  await expect(history).toHaveCSS('width', '540px');
+
+  await page.setViewportSize({ width: 400, height: 800 });
+  await expect(comment).toHaveCSS('width', '400px');
+  await expect(history).toHaveCSS('width', '400px');
+  await page.setViewportSize({ width: 1440, height: 1080 });
+  await expect(comment).toHaveCSS('width', '470px');
+  await expect(history).toHaveCSS('width', '540px');
+
+  await page.reload();
+  await page.addScriptTag({ path: script });
+  await expect(comment).toHaveCSS('width', '400px');
+  await expect(history).toHaveCSS('width', '620px');
+});
 
 test('content script: comment grip stays above a popup with its own stacking order', async ({
   page,
@@ -806,20 +906,20 @@ test('content script: comment grip stays above a popup with its own stacking ord
   await expectReachableGrip(page, popup);
   const grip = gripHost(popup).locator('[data-resize-handle]');
   await dragHandle(page, grip, 40);
-  await expect(popup).toHaveCSS('width', '480px');
+  await expect(popup).toHaveCSS('width', '440px');
   await popup.evaluate((element) => {
-    (element as HTMLElement).style.zIndex = '2000';
+    element.style.zIndex = '2000';
   });
   await expectReachableGrip(page, popup);
   await dragHandle(page, grip, 20);
-  await expect(popup).toHaveCSS('width', '500px');
+  await expect(popup).toHaveCSS('width', '460px');
   // A separate overlay above the popup must still appear above the grip.
   await popup.evaluate((element) => {
-    const popup = element as HTMLElement;
     const overlay = document.createElement('div');
     overlay.className = 'higher-overlay';
-    overlay.style.cssText = `position:absolute;left:${popup.style.left};top:${popup.style.top};width:${popup.style.width};height:160px;z-index:2001;background:white`;
-    popup.parentElement!.append(overlay);
+    const { width, height, left, top } = getComputedStyle(element);
+    overlay.style.cssText = `position:absolute;left:${left};top:${top};width:${width};height:${height};z-index:2001;background:white`;
+    element.parentElement!.append(overlay);
   });
   const overlay = page.locator('.higher-overlay');
   await expect
@@ -877,7 +977,7 @@ for (const kind of ['history', 'comment'] as const) {
     await expectReachableGrip(page, popup);
     expect((await grip.boundingBox())!.y).toBeCloseTo(beforeScroll!.y, 0);
     const oldWidth = (await popup.boundingBox())!.width;
-    await dragHandle(page, grip, -60);
+    await dragHandle(page, grip, 60);
     await expect(popup).toHaveCSS('width', `${oldWidth - 60}px`);
     await expectReachableGrip(page, popup);
     await page.setViewportSize({ width: 360, height: 220 });
@@ -898,15 +998,15 @@ for (const kind of ['history', 'comment'] as const) {
     expect(styleChanges).toBeLessThanOrEqual(1);
     // Invalidating the extension restores native min/max height declarations and priorities.
     await page.evaluate(() => {
-      delete (globalThis as unknown as { chrome: { runtime: { id?: string } } }).chrome.runtime.id;
+      delete chrome.runtime.id;
       window.dispatchEvent(new Event('resize'));
     });
     await expect(page.locator('spe-resize-grip')).toHaveCount(0);
     expect(
       await popup.evaluate((element) => ({
-        min: (element as HTMLElement).style.minHeight,
-        max: (element as HTMLElement).style.maxHeight,
-        priority: (element as HTMLElement).style.getPropertyPriority('max-height'),
+        min: element.style.minHeight,
+        max: element.style.maxHeight,
+        priority: element.style.getPropertyPriority('max-height'),
       })),
     ).toEqual({ min: '900px', max: '900px', priority: 'important' });
   });
@@ -1073,8 +1173,8 @@ test('content script: resets reused history scroll when reopened', async ({ page
   await popup.evaluate((node) => node.classList.add('native-update'));
   await expect.poll(() => popup.evaluate((node) => node.scrollTop)).toBe(200);
   await popup.evaluate((node) => {
-    (node as HTMLElement).style.display = 'none';
-    (node as HTMLElement).style.display = 'flex';
+    node.style.display = 'none';
+    node.style.display = 'flex';
   });
   await expect.poll(() => popup.evaluate((node) => node.scrollTop)).toBe(0);
   await popup.evaluate((node) => {
@@ -1082,8 +1182,8 @@ test('content script: resets reused history scroll when reopened', async ({ page
   });
   await expect.poll(() => popup.evaluate((node) => node.scrollTop)).toBe(200);
   await popup.evaluate((node) => {
-    (node as HTMLElement).hidden = true;
-    (node as HTMLElement).hidden = false;
+    node.toggleAttribute('hidden', true);
+    node.toggleAttribute('hidden', false);
   });
   await expect.poll(() => popup.evaluate((node) => node.scrollTop)).toBe(0);
   await popup.evaluate((node) => {
@@ -1091,8 +1191,8 @@ test('content script: resets reused history scroll when reopened', async ({ page
   });
   await expect.poll(() => popup.evaluate((node) => node.scrollTop)).toBe(200);
   await page.locator('#history-owner').evaluate((node) => {
-    (node as HTMLElement).style.display = 'none';
-    (node as HTMLElement).style.display = 'block';
+    node.style.display = 'none';
+    node.style.display = 'block';
   });
   await expect.poll(() => popup.evaluate((node) => node.scrollTop)).toBe(0);
   await popup.evaluate((node) => {
@@ -1262,22 +1362,22 @@ test('content script: returning from the end of history restores a reused value'
   await expect(diff.locator('.after .value')).toHaveText('abc');
   await previous.dispatchEvent('click');
   await content.evaluate((node) => {
-    (node as HTMLElement).style.display = 'none';
+    node.style.display = 'none';
   });
   await previous.evaluate((node) => node.setAttribute('aria-disabled', 'true'));
   await next.evaluate((node) => node.setAttribute('aria-disabled', 'false'));
   await message.evaluate((node) => {
-    (node as HTMLElement).style.display = 'block';
+    node.style.display = 'block';
   });
   await expect(diff).toHaveCount(0);
   await expect(message).toBeVisible();
   // Sheets reuses the previous value node without changing its innerHTML.
   // Sheets may reveal the same value before the navigation click reaches the extension.
   await content.evaluate((node) => {
-    (node as HTMLElement).style.display = 'block';
+    node.style.display = 'block';
   });
   await message.evaluate((node) => {
-    (node as HTMLElement).style.display = 'none';
+    node.style.display = 'none';
   });
   await next.dispatchEvent('click');
   await previous.evaluate((node) => node.setAttribute('aria-disabled', 'false'));
@@ -1894,7 +1994,7 @@ test('content script: navigation keeps the old diff until the next history is re
   await expect(native).toBeHidden();
   const content = page.locator('.docs-blameview-content');
   await content.evaluate((node) => {
-    (node as HTMLElement).style.display = 'none';
+    node.style.display = 'none';
   });
   await page.clock.runFor(350);
   await expect(popup).toHaveAttribute('data-spe-history-loading');
@@ -1903,7 +2003,9 @@ test('content script: navigation keeps the old diff until the next history is re
   await native.evaluate((node) => {
     node.innerHTML =
       '<span class="docs-blame-bold-text">Replaced:</span> "two" <span class="docs-blame-bold-text">with</span> "three"';
-    (node.parentElement as HTMLElement).style.display = 'block';
+    const parent = node.parentElement;
+    if (!parent) throw new Error('Expected a history content container');
+    parent.style.display = 'block';
   });
   await expect(diff.locator('.after .value')).toHaveText('three');
   await expect(diff).toHaveCount(1);
@@ -2018,11 +2120,6 @@ test('content script: native values start hidden and unsupported content is rest
   await expect(native).toBeHidden();
 
   await page.evaluate(async () => {
-    const chrome = (
-      globalThis as unknown as {
-        chrome: { storage: { local: { set: (data: unknown) => Promise<void> } } };
-      }
-    ).chrome;
     await chrome.storage.local.set({ 'spe.settings.v1': { diffEnabled: false } });
   });
   await expect(diff).toHaveCount(0);
@@ -2035,10 +2132,7 @@ test('content script: a stalled diff render restores native history', async ({ p
   await page.route('**/__extension__/content-scripts/sheets.css', async (route) => {
     requests++;
     if (requests <= 2) await new Promise((resolve) => setTimeout(resolve, 2200));
-    await route.fulfill({
-      body: await readFile(resolve('apps/extension/.output/chrome-mv3/content-scripts/sheets.css')),
-      contentType: 'text/css',
-    });
+    await route.fallback();
   });
   await page.route('**/fixtures/stalled-render', (route) =>
     route.fulfill({
@@ -2069,11 +2163,14 @@ test('content script: navigation keeps the native fallback until the stalled ren
   await openDiffFixture(page);
   await page.clock.install();
   const cssPath = '**/__extension__/content-scripts/sheets.css';
-  const cssReady = Promise.withResolvers<void>();
+  let releaseCss!: () => void;
+  const cssReady = new Promise<void>((resolve) => {
+    releaseCss = resolve;
+  });
   let requests = 0;
   await page.route(cssPath, async (route) => {
     requests++;
-    await cssReady.promise;
+    await cssReady;
     await route.fallback();
   });
 
@@ -2104,7 +2201,7 @@ test('content script: navigation keeps the native fallback until the stalled ren
     await expect(diff).toHaveCount(0);
     expect(requests).toBe(1);
   } finally {
-    cssReady.resolve();
+    releaseCss();
   }
   await expect(diff.locator('.after .value')).toHaveText('later');
   await expect(native).toBeHidden();

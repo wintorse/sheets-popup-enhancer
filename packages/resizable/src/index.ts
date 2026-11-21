@@ -1,7 +1,9 @@
-export interface ResizeOptions {
+interface ResizeOptions {
   target: HTMLElement;
   minWidth?: number;
   maxWidth?: number | (() => number);
+  direction?: () => 1 | -1;
+  setWidth?: (width: number) => void;
   onresize?: (width: number) => void;
   oncommit?: (width: number) => void;
 }
@@ -13,7 +15,7 @@ export function clampWidth(width: number, min: number, max: number) {
 // Svelte action, also usable directly against a handle in an existing page.
 export function resizeHandle(handle: HTMLElement, initial: ResizeOptions) {
   let options = initial;
-  let active: { id: number; x: number; width: number } | undefined;
+  let active: { id: number; x: number; width: number; direction: 1 | -1 } | undefined;
   let frame = 0;
   let pending: number | undefined;
   const view = handle.ownerDocument.defaultView!;
@@ -29,7 +31,8 @@ export function resizeHandle(handle: HTMLElement, initial: ResizeOptions) {
   function write(width: number) {
     const { min, max } = bounds();
     const value = Math.round(clampWidth(width, min, max));
-    options.target.style.setProperty('width', `${value}px`, 'important');
+    if (options.setWidth) options.setWidth(value);
+    else options.target.style.setProperty('width', `${value}px`, 'important');
     options.onresize?.(value);
     return value;
   }
@@ -49,12 +52,13 @@ export function resizeHandle(handle: HTMLElement, initial: ResizeOptions) {
       id: event.pointerId,
       x: event.clientX,
       width: options.target.getBoundingClientRect().width,
+      direction: options.direction?.() ?? 1,
     };
     handle.setPointerCapture(event.pointerId);
   }
   function move(event: PointerEvent) {
     if (!active || event.pointerId !== active.id) return;
-    pending = active.width + event.clientX - active.x;
+    pending = active.width + (event.clientX - active.x) * active.direction;
     if (!frame)
       frame = view.requestAnimationFrame(() => {
         frame = 0;

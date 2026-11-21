@@ -1,22 +1,19 @@
 export type Ui = { mount: () => void; remove: () => void; shadowHost: HTMLElement };
-export type ValueState = {
+type ValueState = {
   signature: string;
   display: string;
   priority: string;
   ui: Ui;
 };
 export type PopupState = {
-  width: string;
-  priority: string;
-  left: string;
-  leftPriority: string;
-  top: string;
-  topPriority: string;
   maxHeight: string;
   maxHeightPriority: string;
   minHeight: string;
   minHeightPriority: string;
   desiredWidth: number;
+  leftGrip: boolean;
+  resizeEdge?: { position: number; leftGrip: boolean; width: number; nativeLeft?: number };
+  pinnedRightAt?: number;
   grip?: Ui;
   pending: boolean;
   visible: boolean;
