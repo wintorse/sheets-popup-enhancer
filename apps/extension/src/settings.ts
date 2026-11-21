@@ -35,7 +35,7 @@ function normalizeNumber(
   return Math.max(min, Math.min(max, Math.round(value / step) * step));
 }
 
-export function normalizeSettings(value: unknown): Settings {
+function normalizeSettings(value: unknown): Settings {
   const raw = value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
   return {
     commentWidth: normalizeNumber(

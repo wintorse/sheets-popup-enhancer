@@ -1,4 +1,4 @@
-export interface ResizeOptions {
+interface ResizeOptions {
   target: HTMLElement;
   minWidth?: number;
   maxWidth?: number | (() => number);
